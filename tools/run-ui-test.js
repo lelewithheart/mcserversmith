@@ -43,12 +43,23 @@ console.log(`data dir: ${dataDir}\n`);
 
 const child = spawn(electronPath, ['.'], { cwd: root, env, stdio: 'inherit' });
 
+// A hung renderer would otherwise leave orphaned electron processes behind (the
+// npm parent can be killed while the child keeps running), so stop it hard.
+const timeoutMs = Number(process.env.MCSERVERSMITH_SMOKE_TIMEOUT_MS || 6 * 60 * 1000);
+const killer = setTimeout(() => {
+  console.error(`\nsmoke test did not finish within ${Math.round(timeoutMs / 1000)}s — killing it`);
+  try { child.kill(); } catch { /* ignore */ }
+  setTimeout(() => process.exit(3), 800);
+}, timeoutMs);
+killer.unref?.();
+
 child.on('error', (err) => {
   console.error(`failed to launch electron: ${err.message}`);
   process.exit(2);
 });
 
 child.on('close', (code) => {
+  clearTimeout(killer);
   if (code !== 0 && process.platform === 'win32') {
     console.error('\n(If the UI checks passed but the exit code is odd, check for leftover electron.exe processes.)');
   }

@@ -143,6 +143,8 @@ function register({ ipcMain, manager, shell, dialog, app, getWindow }) {
   ipcMain.handle(`${M}:files:delete`, wrap(({ id, rel }) => files.remove(id, rel)));
   ipcMain.handle(`${M}:files:import`, wrap(({ id, rel, sources }) => files.importFiles(id, rel, sources)));
   ipcMain.handle(`${M}:files:size`, wrap(({ id, rel }) => files.folderSize(id, rel)));
+  // absolute path only (Copy path) — goes through the same jailed resolver
+  ipcMain.handle(`${M}:files:path`, wrap(({ id, rel = '' }) => files.absolute(id, rel)));
   ipcMain.handle(`${M}:files:reveal`, wrap(async ({ id, rel, openWithDefault = false }) => {
     const target = files.absolute(id, rel);
     if (!fs.existsSync(target)) throw new Error('Not found');

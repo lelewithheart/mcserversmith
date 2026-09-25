@@ -124,6 +124,63 @@ function notify(title, body) {
   } catch { /* ignore */ }
 }
 
+// Tray menu and tooltip. Counting builds/sets keeps this verifiable from the
+// smoke test: the menu must be built when it is opened, never on a timer.
+let trayMenuBuilds = 0;
+let trayMenuSets = 0;
+let traySignature = null;
+
+async function buildTrayMenu() {
+  let statuses = [];
+  try { statuses = await manager.statuses(); } catch { /* ignore */ }
+  const items = statuses.length
+    ? statuses.map((s) => ({
+      label: `${s.state === 'online' ? '● ' : s.state === 'starting' ? '◐ ' : '○ '}${s.name} (${s.players.online}/${s.players.max})`,
+      submenu: [
+        { label: 'Start', click: () => manager.startInstance(s.id).catch((e) => log.error(e.message)) },
+        { label: 'Stop', click: () => manager.stopInstance(s.id).catch((e) => log.error(e.message)) },
+        { label: 'Restart', click: () => manager.restartInstance(s.id).catch((e) => log.error(e.message)) },
+        { type: 'separator' },
+        { label: 'Open folder', click: () => shell.openPath(require('./servers/instances').instancePaths(s.id).dir) }
+      ]
+    }))
+    : [{ label: 'No servers yet', enabled: false }];
+
+  const menu = Menu.buildFromTemplate([
+    { label: 'MCServerSmith', enabled: false },
+    { type: 'separator' },
+    ...items,
+    { type: 'separator' },
+    { label: 'Open window', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } else createWindow(); } },
+    ...(statuses.some((s) => s.state === 'online') ? [{ label: 'Stop all servers', click: () => stopAll() }] : []),
+    { type: 'separator' },
+    { label: 'Quit', click: () => quitApp() }
+  ]);
+  trayMenuBuilds += 1;
+  traySignature = menu.items.map((i) => i.label).join('|');
+  return menu;
+}
+
+function setTrayMenu(menu) {
+  tray.setContextMenu(menu);
+  trayMenuSets += 1;
+}
+
+/**
+ * Windows: setContextMenu() replaces the menu — and replacing the menu a user
+ * currently has open closes it. The old code did that from a 5 s interval, so
+ * the tray menu snapped shut shortly after opening. Build it on right-click
+ * instead; the tooltip can still refresh, it does not close anything.
+ */
+async function refreshTrayTooltip() {
+  let statuses = [];
+  try { statuses = await manager.statuses(); } catch { /* ignore */ }
+  const online = statuses.filter((s) => s.state === 'online').length;
+  try {
+    tray.setToolTip(statuses.length ? `MCServerSmith — ${online}/${statuses.length} online` : 'MCServerSmith');
+  } catch { /* tray gone */ }
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(iconPath() || '');
   if (icon.isEmpty()) {
@@ -133,38 +190,31 @@ function createTray() {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
   }
 
-  const rebuild = async () => {
-    let statuses = [];
-    try { statuses = await manager.statuses(); } catch { /* ignore */ }
-    const items = statuses.length
-      ? statuses.map((s) => ({
-        label: `${s.state === 'online' ? '● ' : s.state === 'starting' ? '◐ ' : '○ '}${s.name} (${s.players.online}/${s.players.max})`,
-        submenu: [
-          { label: 'Start', click: () => manager.startInstance(s.id).catch((e) => log.error(e.message)) },
-          { label: 'Stop', click: () => manager.stopInstance(s.id).catch((e) => log.error(e.message)) },
-          { label: 'Restart', click: () => manager.restartInstance(s.id).catch((e) => log.error(e.message)) },
-          { type: 'separator' },
-          { label: 'Open folder', click: () => shell.openPath(require('./servers/instances').instancePaths(s.id).dir) }
-        ]
-      }))
-      : [{ label: 'No servers yet', enabled: false }];
-
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'MCServerSmith', enabled: false },
-      { type: 'separator' },
-      ...items,
-      { type: 'separator' },
-      { label: 'Open window', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } else createWindow(); } },
-      ...(statuses.some((s) => s.state === 'online') ? [{ label: 'Stop all servers', click: () => stopAll() }] : []),
-      { type: 'separator' },
-      { label: 'Quit', click: () => quitApp() }
-    ]));
-  };
-
   tray.setToolTip('MCServerSmith');
   tray.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } else createWindow(); });
-  rebuild();
-  setInterval(rebuild, 5000).unref?.();
+
+  if (process.platform === 'win32') {
+    tray.on('right-click', () => {
+      buildTrayMenu()
+        .then((menu) => tray.popUpContextMenu(menu))
+        .catch((err) => log.error(err.message));
+    });
+    refreshTrayTooltip();
+    setInterval(refreshTrayTooltip, 15000).unref?.();
+  } else {
+    // Linux (and macOS) tray menus are owned by the OS: keep one attached, and
+    // only replace it when its content actually changed.
+    buildTrayMenu().then(setTrayMenu).catch(() => {});
+    setInterval(() => {
+      manager.statuses()
+        .then((statuses) => {
+          const sig = statuses.map((s) => `${s.name}:${s.state}:${s.players.online}`).join('|');
+          if (sig === traySignature) return;
+          return buildTrayMenu().then(setTrayMenu);
+        })
+        .catch(() => {});
+    }, 15000).unref?.();
+  }
 }
 
 async function stopAll() {
@@ -290,7 +340,16 @@ app.whenReady().then(async () => {
     // automated UI check — drives the renderer, prints a report, exits
     log.info('smoke mode: driving the UI…');
     const { run: runSmoke } = require('./smoke');
-    runSmoke({ window: mainWindow })
+    runSmoke({
+      window: mainWindow,
+      probe: {
+        trayStats: () => ({ builds: trayMenuBuilds, sets: trayMenuSets }),
+        trayMenu: () => buildTrayMenu().then((menu) => ({
+          labels: menu.items.map((i) => i.label),
+          builds: trayMenuBuilds
+        }))
+      }
+    })
       .then((code) => {
         log.info(`smoke mode: finished with code ${code}`);
         manager.stopPolling();

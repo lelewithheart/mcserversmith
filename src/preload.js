@@ -53,6 +53,7 @@ const api = {
     remove: (id, rel) => invoke('files:delete', { id, rel }),
     importFiles: (id, rel, sources) => invoke('files:import', { id, rel, sources }),
     size: (id, rel) => invoke('files:size', { id, rel }),
+    path: (id, rel = '') => invoke('files:path', { id, rel }),
     reveal: (id, rel, openWithDefault = false) => invoke('files:reveal', { id, rel, openWithDefault })
   },
   backups: {

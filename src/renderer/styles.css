@@ -243,4 +243,34 @@ td.actions { text-align: right; white-space: nowrap; }
 .hoster { display: flex; flex-direction: column; gap: 4px; }
 .hoster .price { font-size: 18px; font-weight: 600; }
 .scroll-y { max-height: 320px; overflow-y: auto; }
+
+/* -------------------------------------------------------- files & menus */
+table.files td.fname { max-width: 460px; }
+button.link {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 0; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+button.link:hover { color: var(--accent); }
+tr.file-row:hover td { background: var(--bg-3); }
+td.actions { position: relative; width: 46px; text-align: right; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover, th.sortable.sorted { color: var(--text); }
+th.sortable .sort-mark { margin-left: 5px; font-size: 9px; color: var(--accent); }
+
+.menu {
+  position: absolute; right: 8px; top: calc(100% - 2px); z-index: 30;
+  min-width: 200px; padding: 4px; text-align: left;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.menu-item {
+  display: block; width: 100%; padding: 7px 10px; border: 0; border-radius: 7px;
+  background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.menu-item:hover { background: var(--bg-4); }
+.menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
+.modal.dialog { width: min(460px, 96vw); }
+.modal.dialog .prewrap { color: var(--muted); font-size: 13px; }
 .prewrap { white-space: pre-wrap; }

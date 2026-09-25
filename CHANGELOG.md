@@ -3,6 +3,54 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.3.0] — 2026-09-25
+
+UI and usability. Two of these three defects were the same root cause, and the third
+made a whole tab look broken.
+
+### Fixed
+- **The UI no longer tears itself out from under your hands.** Every status update
+  (the 3 s poll and every server event) replaced the whole content area with `innerHTML`.
+  The consequences were exactly the reported symptoms: an open dropdown snapped shut
+  after a few seconds because its node was detached, a field you were typing in was
+  replaced (typed text and caret gone), and the console jumped back to the bottom while
+  you were reading it. Now a region is only re-painted when its markup actually changed,
+  background updates are held back while a field inside it has focus and applied the
+  moment you leave it, and focus, caret, typed text and scroll position survive a
+  re-paint.
+- **`window.prompt()` does not exist in Electron.** "New folder" and "Rename" in the
+  Files tab called it, so both did nothing at all in the packaged app — a file browser
+  whose create/rename buttons are dead. `confirm()` works but blocks the whole renderer,
+  so it was just as untestable. All of them (files, backups, reinstall, licence key,
+  plugins) now use the app's own modal dialogs: Enter submits, Esc or a click on the
+  backdrop cancels.
+- **The tray menu stops closing by itself.** It was rebuilt from a 5 s timer, and
+  replacing a tray context menu closes the menu that is currently open. It is now built
+  when it is actually opened (right-click); the tooltip carries the live status instead.
+- **Console tab:** the log was rebuilt on every render (scroll reset, filter text lost)
+  and the command box stole focus from the filter box on every re-mount. The log is now
+  append-only, keeps your reading position and remembers the filter.
+
+### Added
+- **Files tab rework:** a per-row `⋯` menu (open, add files here, rename, delete, open in
+  file manager, copy path) instead of two always-visible buttons; double-click a row to
+  enter a folder or open a file; right-click a row opens the same menu; sortable columns
+  (name / size / modified, folders first); a filter box that hides rows in place.
+- New IPC `files:path` (absolute path, resolved through the same jailed resolver) for
+  "Copy path".
+- `tools/run-ui-test.js` now kills a hung run instead of leaving orphaned electron
+  processes behind, and the smoke report is written to `logs/ui-smoke.log` next to the
+  app log (`app.exit()` truncated it when stdout was a pipe).
+
+### Verified
+- `npm run test:ui` — **89/89** checks. The suite grew from 62 to 89: it now drives the
+  in-app dialogs and the full files workflow (create → rename → delete through the UI and
+  on disk), asserts that a focused input/select keeps node identity, text and focus
+  across a status poll, that the console filter survives one, and that the tray menu is
+  built on demand rather than on a timer.
+- The packaged build was re-tested in smoke mode (`dist/win-unpacked`), because a
+  renderer fix only counts once it is inside the artifact users download.
+
 ## [0.2.5] — 2026-09-25
 
 Releases are automatic from here on: one tag push builds both platforms, fills the release

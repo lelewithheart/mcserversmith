@@ -72,7 +72,12 @@ const state = {
   busy: {},
   autoScroll: true,
   autoScrollManual: false,
+  consoleFilter: '',
+  consoleScroll: 0,
   files: {},
+  filesMenu: null,
+  filesFilter: '',
+  filesSort: { key: 'name', dir: 1 },
   lastConsoleId: null
 };
 
@@ -110,6 +115,27 @@ function notifyError(err) {
   const msg = err && err.message ? err.message : String(err);
   toast(msg, 'error', 6500);
   console.error(err);
+}
+
+/** Clipboard write with a fallback: the renderer runs from file:// with a tight CSP. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to the legacy path */ }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  if (!ok) throw new Error(t('toast.copyFailed'));
+  return true;
 }
 
 function busy(key, value) {
@@ -150,46 +176,138 @@ async function loadAll() {
 
 // ---------------------------------------------------------------- render
 let renderQueued = false;
+let renderForce = true;
+
 /**
  * Coalesce renders. Deliberately NOT requestAnimationFrame: Chromium throttles
  * rAF to ~0 calls/s while the window is hidden, minimised or occluded, which
  * would freeze the whole UI until the user looked at it again.
+ *
+ * `force: false` marks a *background* update (status poll, server event). Those
+ * must never take the DOM away from the user, so `paint` holds them back while a
+ * field inside the region is focused. Anything the user triggered stays forced.
  */
-function rerender() {
+function rerender({ force = true } = {}) {
+  // a queued render is forced as soon as any of the queued requests was forced
+  renderForce = renderQueued ? (renderForce || force) : force;
   if (renderQueued) return;
   renderQueued = true;
   setTimeout(() => {
     renderQueued = false;
+    const forced = renderForce;
+    renderForce = true;
     try {
-      render();
+      render(forced);
     } catch (err) {
       console.error('render failed', err);
-      renderQueued = false;
     }
   }, 16);
 }
 
-function render() {
+// ---- DOM painting ---------------------------------------------------------
+// Assigning `innerHTML` on every status tick destroys whatever the user is doing
+// in that region: the focused field is replaced (value from state, caret gone),
+// an open <select> popup snaps shut because its node is detached, the console
+// jumps back to the bottom. So a region is only touched when its markup really
+// changed, and never while the user is typing in it.
+function activeControlIn(root) {
+  const a = document.activeElement;
+  if (!root || !a || !root.contains(a)) return null;
+  return a.matches('input, textarea, select') ? a : null;
+}
+
+function captureFocus(root) {
+  const a = activeControlIn(root);
+  if (!a) return null;
+  let start = null;
+  let end = null;
+  try { start = a.selectionStart; end = a.selectionEnd; } catch { /* not a text control */ }
+  return { id: a.id || null, prop: (a.dataset && a.dataset.prop) || null, start, end };
+}
+
+function restoreFocus(root, snap) {
+  if (!snap) return;
+  let el = snap.id ? document.getElementById(snap.id) : null;
+  if (!el && snap.prop) el = root.querySelector(`[data-prop="${snap.prop}"]`);
+  if (!el || !root.contains(el)) return;
+  el.focus();
+  if (snap.start != null && typeof el.setSelectionRange === 'function') {
+    try { el.setSelectionRange(snap.start, snap.end); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Free-text fields that are not bound to state (e.g. the player name box) keep
+ * what the user typed across a repaint.
+ */
+function captureFieldValues(root) {
+  const out = {};
+  for (const el of root.querySelectorAll('input, textarea, select')) {
+    if (!el.id) continue;
+    if (el.dataset.prop || el.dataset.field || el.dataset.inst || el.dataset.tunnel) continue;
+    out[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  return out;
+}
+
+function restoreFieldValues(root, values) {
+  for (const [id, val] of Object.entries(values || {})) {
+    const el = root.querySelector(`#${id}`);
+    if (!el) continue;
+    if (el.type === 'checkbox') { el.checked = val; continue; }
+    if (!el.value && val) el.value = val;   // a value rendered from state always wins
+  }
+}
+
+/** Replace a region's markup — only when it changed, and not while it is edited. */
+function paint(root, html, force = true) {
+  if (!root) return false;
+  if (root.__paintedHtml === html) return false;
+  if (activeControlIn(root) && !force) {
+    root.__pendingHtml = html;
+    return false;
+  }
+  const snap = captureFocus(root);
+  const fields = captureFieldValues(root);
+  root.innerHTML = html;
+  root.__paintedHtml = html;
+  root.__pendingHtml = null;
+  restoreFieldValues(root, fields);
+  restoreFocus(root, snap);
+  return true;
+}
+
+/** Apply a background update that was held back while the user was editing. */
+function flushPendingPaints() {
+  for (const root of [$('#instance-list'), $('#upsell-slot'), $('#content')]) {
+    if (!root || root.__pendingHtml == null) continue;
+    const painted = paint(root, root.__pendingHtml, true);
+    if (painted && root.id === 'content') afterContentPaint();
+  }
+}
+document.addEventListener('focusout', () => setTimeout(flushPendingPaints, 0));
+
+function render(force = true) {
   applyStaticI18n();
   $('#brand-version').textContent = state.appInfo.version ? `v${state.appInfo.version}` : '';
   const lb = $('#license-badge');
   lb.textContent = state.license.tier || 'free';
   lb.className = `badge ${state.license.tier !== 'free' ? 'paid' : ''}`;
 
-  renderInstanceList();
-  renderUpsell();
+  renderInstanceList(force);
+  renderUpsell(force);
   renderLanguageSelect();
   renderBreadcrumb();
-  renderContent();
+  renderContent(force);
 }
 
-function renderInstanceList() {
+function renderInstanceList(force = true) {
   const root = $('#instance-list');
   if (!state.instances.length) {
-    root.innerHTML = `<div class="empty">${esc(t('nav.noServers'))}</div>`;
+    paint(root, `<div class="empty">${esc(t('nav.noServers'))}</div>`, force);
     return;
   }
-  root.innerHTML = state.instances.map((i) => {
+  const html = state.instances.map((i) => {
     const st = state.statuses[i.id] || {};
     const status = st.state || 'offline';
     const online = status === 'online' || status === 'starting';
@@ -201,6 +319,7 @@ function renderInstanceList() {
         <span class="players">${esc(players)}</span>
       </button>`;
   }).join('');
+  paint(root, html, force);
 }
 
 function renderLanguageSelect() {
@@ -214,17 +333,17 @@ function renderLanguageSelect() {
   sel.value = current;
 }
 
-function renderUpsell() {
+function renderUpsell(force = true) {
   const slot = $('#upsell-slot');
-  if (!state.upsell || state.settings.showUpsellCards === false) { slot.innerHTML = ''; return; }
+  if (!state.upsell || state.settings.showUpsellCards === false) { paint(slot, '', force); return; }
   const u = state.upsell;
-  slot.innerHTML = `<div class="upsell">
+  paint(slot, `<div class="upsell">
       <span>★</span>
       <span><strong>${esc(t(`upsell.${u.feature}.headline`))}</strong>
       <span class="muted"> ${esc(t(`upsell.${u.feature}.body`))}</span></span>
       <button class="btn btn-sm btn-primary" data-action="upsell-open" data-feature="${esc(u.feature)}">${esc(t('upsell.cta'))}</button>
       <span class="x" data-action="upsell-dismiss" data-kind="${esc(u.feature)}">✕</span>
-    </div>`;
+    </div>`, force);
 }
 
 function renderBreadcrumb() {
@@ -242,15 +361,27 @@ function renderBreadcrumb() {
   $('#view-subtitle').textContent = sub;
 }
 
-function renderContent() {
+function renderContent(force = true) {
   const el = $('#content');
-  if (state.view === 'welcome') el.innerHTML = viewWelcome();
-  else if (state.view === 'server') el.innerHTML = viewServer();
-  else if (state.view === 'settings') el.innerHTML = viewSettings();
-  else if (state.view === 'runtimes') el.innerHTML = viewRuntimes();
-  else if (state.view === 'cloud') el.innerHTML = viewCloud();
-  else if (state.view === 'license') el.innerHTML = viewLicense();
-  if (state.view === 'server' && state.tab === 'console') mountConsole();
+  let html = '';
+  if (state.view === 'welcome') html = viewWelcome();
+  else if (state.view === 'server') html = viewServer();
+  else if (state.view === 'settings') html = viewSettings();
+  else if (state.view === 'runtimes') html = viewRuntimes();
+  else if (state.view === 'cloud') html = viewCloud();
+  else if (state.view === 'license') html = viewLicense();
+  if (paint(el, html, force)) afterContentPaint();
+}
+
+/**
+ * The console keeps its own append-only DOM (mountConsole), so it has to be told
+ * when its skeleton was freshly painted. Without this it would either not render
+ * at all or rebuild the whole log — scroll position included — every few seconds.
+ */
+function afterContentPaint() {
+  if (state.view !== 'server') return;
+  if (state.tab === 'console') mountConsole();
+  if (state.tab === 'files') applyFilesFilter();
 }
 
 // ---------------------------------------------------------------- views
@@ -409,7 +540,7 @@ function tabConsole(inst) {
   return `<div class="card">
     <div class="row between" style="margin-bottom:8px">
       <div class="row">
-        <input type="text" id="console-filter" placeholder="${esc(t('console.filter'))}" style="width:230px" />
+        <input type="text" id="console-filter" placeholder="${esc(t('console.filter'))}" value="${esc(state.consoleFilter || '')}" style="width:230px" />
         <label class="switch"><input type="checkbox" id="console-autoscroll" ${state.autoScroll ? 'checked' : ''} /> ${esc(t('console.autoscroll'))}</label>
       </div>
       <div class="row">
@@ -766,6 +897,9 @@ function tabFiles(inst) {
   const advanced = state.settings.filesAdvanced === true;
   const data = state.files[inst.id] || {};
   const rel = data.path || '';
+  const sort = state.filesSort || { key: 'name', dir: 1 };
+  const dirSign = sort.dir === -1 ? -1 : 1;
+
   const rows = advanced
     ? (data.entries || []).map((e) => ({
         label: e.name, rel: (rel ? `${rel}/` : '') + e.name, dir: e.dir, size: e.size, mtime: e.mtime
@@ -774,6 +908,16 @@ function tabFiles(inst) {
         label: r.key.startsWith('file.') ? r.key.slice(5) : t(`files.${r.key}`),
         rel: r.rel, dir: r.dir, size: r.size, mtime: null
       }));
+
+  // folders first, then the selected column — the way a file manager sorts
+  rows.sort((a, b) => {
+    if (!!a.dir !== !!b.dir) return a.dir ? -1 : 1;
+    let r;
+    if (sort.key === 'size') r = (a.size || 0) - (b.size || 0);
+    else if (sort.key === 'mtime') r = (a.mtime || 0) - (b.mtime || 0);
+    else r = String(a.label).localeCompare(String(b.label), undefined, { numeric: true, sensitivity: 'base' });
+    return r * dirSign;
+  });
 
   const crumbs = [];
   if (advanced) {
@@ -785,19 +929,23 @@ function tabFiles(inst) {
     });
   }
 
+  const head = (key, label) => `<th class="sortable ${sort.key === key ? 'sorted' : ''}" data-action="files-sort" data-sort="${key}">${esc(label)}<span class="sort-mark">${sort.key === key ? (dirSign > 0 ? '▲' : '▼') : ''}</span></th>`;
+
+  const rowHtml = (r) => `<tr class="file-row" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" data-dir="${r.dir ? '1' : '0'}">
+    <td class="fname"><button class="link" data-action="${r.dir ? 'files-nav' : 'files-open'}" data-rel="${esc(r.rel)}">
+        <span class="ico">${r.dir ? '📁' : '📄'}</span> ${esc(r.label)}</button>
+      ${advanced ? '' : `<div class="muted small mono">${esc(r.rel)}</div>`}</td>
+    <td class="mono small">${r.dir ? '' : esc(humanSize(r.size))}</td>
+    <td class="muted small">${esc(humanDate(r.mtime))}</td>
+    <td class="actions">
+      <button class="btn btn-sm btn-ghost" data-action="files-menu" data-rel="${esc(r.rel)}" title="${esc(t('files.more'))}">⋯</button>
+      ${state.filesMenu === r.rel ? filesMenu(r) : ''}
+    </td></tr>`;
+
   const body = rows.length
-    ? `<table><thead><tr>
-         <th>${esc(t('files.name'))}</th><th>${esc(t('files.size'))}</th><th>${esc(t('files.modified'))}</th><th></th>
-       </tr></thead><tbody>${rows.map((r) => `<tr>
-         <td>${r.dir ? '📁' : '📄'} <a href="#" data-action="${r.dir ? 'files-nav' : 'files-open'}" data-rel="${esc(r.rel)}">${esc(r.label)}</a>
-           ${advanced ? '' : `<div class="muted small mono">${esc(r.rel)}</div>`}</td>
-         <td class="mono small">${r.dir ? '' : esc(humanSize(r.size))}</td>
-         <td class="muted small">${esc(humanDate(r.mtime))}</td>
-         <td><div class="row">
-           ${!advanced && r.dir ? `<button class="btn btn-sm btn-ghost" title="${esc(t('files.addHere'))}" data-action="files-import" data-rel="${esc(r.rel)}">＋</button>` : ''}
-           <button class="btn btn-sm btn-ghost" data-action="files-rename" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}">${esc(t('files.rename'))}</button>
-           <button class="btn btn-sm btn-ghost" data-action="files-delete" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}">${esc(t('files.delete'))}</button>
-         </div></td></tr>`).join('')}</tbody></table>`
+    ? `<table class="files"><thead><tr>${head('name', t('files.name'))}${head('size', t('files.size'))}${head('mtime', t('files.modified'))}<th></th></tr></thead>
+         <tbody>${rows.map(rowHtml).join('')}</tbody></table>
+       <div id="files-nomatch" class="muted small" style="display:none;margin-top:8px">${esc(t('files.noMatch'))}</div>`
     : `<p class="muted">${esc(t('files.empty'))}</p>`;
 
   return `
@@ -808,6 +956,7 @@ function tabFiles(inst) {
           <button class="btn btn-sm ${advanced ? 'btn-primary' : 'btn-ghost'}" data-action="files-mode" data-mode="advanced">${esc(t('files.advanced'))}</button>
         </div>
         <div class="row">
+          <input type="text" id="files-filter" placeholder="${esc(t('files.filter'))}" value="${esc(state.filesFilter || '')}" style="width:170px" />
           <button class="btn btn-sm" data-action="files-mkdir">${esc(t('files.newFolder'))}</button>
           <button class="btn btn-sm" data-action="files-import">${esc(t('files.addFiles'))}</button>
           <button class="btn btn-sm btn-ghost" data-action="files-refresh">${esc(t('files.refresh'))}</button>
@@ -820,6 +969,37 @@ function tabFiles(inst) {
         </div>` : `<p class="muted small" style="margin-bottom:10px">${esc(t('files.simpleHint'))}</p>`}
       ${busy('files') ? `<p class="muted">${esc(t('common.loading'))}</p>` : body}
     </div>`;
+}
+
+/** Per-row overflow menu (replaces the two always-visible buttons per row). */
+function filesMenu(r) {
+  const item = (action, label, extra = '') =>
+    `<button class="menu-item" data-action="${action}" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" ${extra}>${esc(label)}</button>`;
+  return `<div class="menu">
+      ${item(r.dir ? 'files-nav' : 'files-open', t('files.open'))}
+      ${r.dir ? item('files-import', t('files.addHere')) : ''}
+      <div class="menu-sep"></div>
+      ${item('files-rename', t('files.rename'))}
+      ${item('files-delete', t('files.delete'))}
+      <div class="menu-sep"></div>
+      ${item('files-reveal', t('files.openFolder'))}
+      ${item('files-copy-path', t('files.copyPath'))}
+    </div>`;
+}
+
+/** Hides non-matching rows in place, so typing in the filter never re-renders. */
+function applyFilesFilter() {
+  const q = String(state.filesFilter || '').toLowerCase();
+  const rows = $$('tr.file-row', $('#content'));
+  let visible = 0;
+  for (const tr of rows) {
+    const hit = !q || String(tr.dataset.name || '').toLowerCase().includes(q);
+    tr.style.display = hit ? '' : 'none';
+    if (hit) visible += 1;
+  }
+  const note = $('#files-nomatch');
+  if (note) note.style.display = (visible || !rows.length) ? 'none' : '';
+  return visible;
 }
 
 function viewRuntimes() {
@@ -912,32 +1092,82 @@ function viewLicense() {
 }
 
 // ---------------------------------------------------------------- console
+/**
+ * Append-only console. The old version rebuilt the whole log on every render
+ * (and every render was triggered by the 3 s status poll), which threw away the
+ * scroll position and — because it also called input.focus() — yanked the caret
+ * out of the filter box while you were typing in it.
+ */
 function mountConsole() {
   const inst = state.instances.find((i) => i.id === state.activeId);
   if (!inst) return;
   const out = $('#console-output');
   if (!out) return;
+
   const lines = state.console[inst.id] || [];
-  out.innerHTML = lines.slice(-1200).map(renderConsoleLine).join('');
-  out.scrollTop = out.scrollHeight;
-  out.addEventListener('scroll', () => {
-    const nearBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-    // an explicit click on the auto-scroll toggle wins until the user scrolls again
-    if (!state.autoScrollManual) {
-      state.autoScroll = nearBottom;
-      const cb = $('#console-autoscroll');
-      if (cb) cb.checked = nearBottom;
+  const fresh = out.dataset.inst !== inst.id;
+  if (fresh) {
+    out.dataset.inst = inst.id;
+    out.dataset.rendered = '0';
+    out.innerHTML = '';
+  } else if (Number(out.dataset.rendered || 0) > lines.length) {
+    // history was trimmed or reloaded -> start over
+    out.dataset.rendered = '0';
+    out.innerHTML = '';
+  }
+
+  const rendered = Number(out.dataset.rendered || 0);
+  if (lines.length > rendered) {
+    out.insertAdjacentHTML('beforeend', lines.slice(rendered).map(renderConsoleLine).join(''));
+    out.dataset.rendered = String(lines.length);
+    while (out.childElementCount > 1500) out.removeChild(out.firstChild);
+    if (fresh) {
+      // the element was recreated by a repaint: go back to where the user was reading
+      out.scrollTop = state.autoScroll
+        ? out.scrollHeight
+        : Math.max(0, Math.min(state.consoleScroll || 0, out.scrollHeight));
+    } else if (state.autoScroll) {
+      out.scrollTop = out.scrollHeight;
     }
-  });
+  }
+
+  if (!out.dataset.wired) {
+    out.dataset.wired = '1';
+    out.addEventListener('scroll', () => {
+      state.consoleScroll = out.scrollTop;
+      const nearBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+      // an explicit click on the auto-scroll toggle wins until the user scrolls again
+      if (!state.autoScrollManual) {
+        state.autoScroll = nearBottom;
+        const cb = $('#console-autoscroll');
+        if (cb) cb.checked = nearBottom;
+      }
+    });
+  }
+
   const input = $('#console-cmd');
-  if (input) {
+  if (input && !input.dataset.wired) {
+    input.dataset.wired = '1';
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { sendConsole(); }
     });
-    input.focus();
   }
+  // Focus the command box when the tab is entered — but never pull the caret out
+  // of a field the user is already typing in (the filter box, for instance).
+  if (fresh && input && !activeControlIn($('#content'))) input.focus();
+
   const filter = $('#console-filter');
-  if (filter) filter.addEventListener('input', () => applyConsoleFilter());
+  if (filter) {
+    if (filter.value !== (state.consoleFilter || '')) filter.value = state.consoleFilter || '';
+    if (!filter.dataset.wired) {
+      filter.dataset.wired = '1';
+      filter.addEventListener('input', () => {
+        state.consoleFilter = filter.value;
+        applyConsoleFilter();
+      });
+    }
+    applyConsoleFilter();
+  }
 }
 
 function renderConsoleLine(entry) {
@@ -946,7 +1176,8 @@ function renderConsoleLine(entry) {
 }
 
 function applyConsoleFilter() {
-  const q = ($('#console-filter') || {}).value || '';
+  const input = $('#console-filter');
+  const q = (state.consoleFilter != null ? state.consoleFilter : (input ? input.value : '')) || '';
   const out = $('#console-output');
   if (!out) return;
   for (const line of $$('.line', out)) {
@@ -960,9 +1191,10 @@ function appendConsole(id, entry) {
   if (state.console[id].length > 4000) state.console[id].splice(0, state.console[id].length - 4000);
   if (state.view !== 'server' || state.tab !== 'console' || state.activeId !== id) return;
   const out = $('#console-output');
-  if (!out) { rerender(); return; }
+  if (!out) { mountConsole(); return; }
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 60;
   out.insertAdjacentHTML('beforeend', renderConsoleLine(entry));
+  out.dataset.rendered = String(state.console[id].length);
   while (out.childElementCount > 1500) out.removeChild(out.firstChild);
   if (state.autoScroll || atBottom) out.scrollTop = out.scrollHeight;
 }
@@ -1004,6 +1236,68 @@ function closeModal() {
   $('#modal-root').innerHTML = '';
   state.wizard = null;
 }
+
+// ---------------------------------------------------------------- dialogs
+/**
+ * In-app replacements for window.prompt() / confirm() / alert().
+ *
+ * Electron does not implement prompt() at all — calling it returns null and logs
+ * "prompt() is and will not be supported", so every prompt-based action (new
+ * folder, rename, licence removal) silently did nothing in the packaged app.
+ * confirm() and alert() do work, but they block the whole renderer: the UI
+ * freezes while the dialog is up, they look foreign next to the app's own
+ * dialogs, and nothing in them can be driven by a test.
+ *
+ * Resolves with the trimmed text / true / false, or null when cancelled.
+ */
+function openDialog({ title, body = '', value = null, okLabel = null, cancelLabel = null, danger = false, showCancel = true }) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-backdrop';
+    wrap.innerHTML = `<div class="modal dialog">
+      <h2>${esc(title)}</h2>
+      ${body ? `<div class="prewrap" style="margin-bottom:12px">${esc(body)}</div>` : ''}
+      ${value === null ? '' : `<input type="text" id="dialog-input" autocomplete="off" value="${esc(value)}" style="width:100%" />`}
+      <div class="modal-actions">
+        ${showCancel ? `<button class="btn" data-dialog="cancel">${esc(cancelLabel || t('common.cancel'))}</button>` : ''}
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-dialog="ok">${esc(okLabel || t('common.ok'))}</button>
+      </div>
+    </div>`;
+
+    const input = wrap.querySelector('#dialog-input');
+    let settled = false;
+    const finish = (kind) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener('keydown', onKey, true);
+      wrap.remove();
+      resolve(kind === 'ok' ? (input ? (input.value.trim() || null) : true) : (input ? null : false));
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish('cancel'); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish('ok'); }
+    };
+    wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) finish('cancel'); });
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dialog]');
+      if (b) { e.stopPropagation(); finish(b.dataset.dialog); }
+    });
+    wrap.addEventListener('input', (e) => e.stopPropagation());
+    document.addEventListener('keydown', onKey, true);
+    // without this the dialog is built and then thrown away — the actions that
+    // awaited it did nothing at all (found by the smoke test)
+    $('#modal-root').appendChild(wrap);
+    const ok = wrap.querySelector('[data-dialog="ok"]');
+    if (input) { input.focus(); if (value) input.select(); } else if (ok) ok.focus();
+  });
+}
+
+/** Text prompt -> string | null */
+const askText = (opts) => openDialog({ value: '', ...opts });
+/** Yes/no -> boolean */
+const askConfirm = (opts) => openDialog({ ...opts, value: null });
+/** Message with a single OK button */
+const showInfo = (opts) => openDialog({ ...opts, value: null, showCancel: false });
 
 function wizardProvider() {
   return state.providers.find((p) => p.id === state.wizard.provider) || state.providers[0];
@@ -1250,6 +1544,23 @@ const actions = {
     await refreshFiles(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '');
   },
   'files-refresh': async () => { await refreshFiles(); toast(t('files.refreshed'), 'success', 1200); },
+  'files-menu': async (el) => {
+    state.filesMenu = state.filesMenu === el.dataset.rel ? null : el.dataset.rel;
+    rerender();
+  },
+  'files-sort': async (el) => {
+    const key = el.dataset.sort || 'name';
+    const cur = state.filesSort || { key: 'name', dir: 1 };
+    state.filesSort = cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: 1 };
+    rerender();
+  },
+  'files-copy-path': async (el) => {
+    try {
+      const abs = await call(api.files.path(state.activeId, el.dataset.rel));
+      await copyText(String(abs));
+      toast(t('toast.copied'), 'success', 1400);
+    } catch (err) { notifyError(err); }
+  },
   'files-open': async (el) => {
     try { await call(api.files.reveal(state.activeId, el.dataset.rel, true)); }
     catch (err) { notifyError(err); }
@@ -1259,7 +1570,7 @@ const actions = {
     catch (err) { notifyError(err); }
   },
   'files-mkdir': async () => {
-    const name = prompt(t('files.newFolderPrompt'));
+    const name = await askText({ title: t('files.newFolder'), body: t('files.newFolderPrompt') });
     if (!name) return;
     try {
       await call(api.files.mkdir(state.activeId, currentFilesRel(), name));
@@ -1278,7 +1589,11 @@ const actions = {
     } catch (err) { notifyError(err); }
   },
   'files-rename': async (el) => {
-    const to = prompt(t('files.renamePrompt'), el.dataset.name);
+    const to = await askText({
+      title: t('files.rename'),
+      body: t('files.renamePrompt'),
+      value: el.dataset.name || ''
+    });
     if (!to || to === el.dataset.name) return;
     try {
       await call(api.files.rename(state.activeId, el.dataset.rel, to));
@@ -1287,7 +1602,13 @@ const actions = {
     } catch (err) { notifyError(err); }
   },
   'files-delete': async (el) => {
-    if (!confirm(t('files.confirmDelete').replace('{name}', el.dataset.name))) return;
+    const yes = await askConfirm({
+      title: t('files.delete'),
+      body: t('files.confirmDelete', { name: el.dataset.name }),
+      okLabel: t('files.delete'),
+      danger: true
+    });
+    if (!yes) return;
     try {
       await call(api.files.remove(state.activeId, el.dataset.rel));
       toast(t('files.deleted'), 'success', 1600);
@@ -1345,7 +1666,8 @@ const actions = {
     refreshInstances().then(rerender);
   },
   'reinstall': async (el) => {
-    if (!confirm(t('config.reinstallConfirm'))) return;
+    const yes = await askConfirm({ title: t('config.reinstall'), body: t('config.reinstallConfirm'), danger: true });
+    if (!yes) return;
     try {
       await call(api.instances.install(el.dataset.id, false));
       toast(t('install.done'), 'success');
@@ -1365,7 +1687,13 @@ const actions = {
   'delete-instance': async (el) => {
     const inst = state.instances.find((i) => i.id === el.dataset.id);
     if (!inst) return;
-    if (!confirm(t('confirm.delete', { name: inst.name }))) return;
+    const yes = await askConfirm({
+      title: t('action.delete'),
+      body: t('confirm.delete', { name: inst.name }),
+      okLabel: t('action.delete'),
+      danger: true
+    });
+    if (!yes) return;
     try {
       await call(api.instances.remove(inst.id, true));
       toast(t('toast.deleted'), 'success');
@@ -1385,12 +1713,19 @@ const actions = {
   },
   'backup-refresh': (el) => refreshBackups(el.dataset.id),
   'backup-restore': async (el) => {
-    if (!confirm(t('backups.restoreConfirm'))) return;
+    const yes = await askConfirm({ title: t('backups.restore'), body: t('backups.restoreConfirm'), danger: true });
+    if (!yes) return;
     try { await call(api.backups.restore(el.dataset.id, el.dataset.name)); toast(t('backups.restored'), 'success'); }
     catch (err) { notifyError(err); }
   },
   'backup-delete': async (el) => {
-    if (!confirm(t('confirm.deleteGeneric'))) return;
+    const yes = await askConfirm({
+      title: t('backups.delete'),
+      body: t('confirm.deleteGeneric'),
+      okLabel: t('files.delete'),
+      danger: true
+    });
+    if (!yes) return;
     try { await call(api.backups.remove(el.dataset.id, el.dataset.name)); refreshBackups(el.dataset.id); }
     catch (err) { notifyError(err); }
   },
@@ -1431,7 +1766,13 @@ const actions = {
     } catch (err) { notifyError(err); }
   },
   'addon-remove': async (el) => {
-    if (!confirm(t('confirm.deleteGeneric'))) return;
+    const yes = await askConfirm({
+      title: t('files.delete'),
+      body: t('confirm.deleteGeneric'),
+      okLabel: t('files.delete'),
+      danger: true
+    });
+    if (!yes) return;
     try { await call(api.plugins.remove(el.dataset.id, el.dataset.file)); refreshAddons(el.dataset.id); }
     catch (err) { notifyError(err); }
   },
@@ -1453,7 +1794,7 @@ const actions = {
   'console-clear': () => { if (state.activeId) state.console[state.activeId] = []; rerender(); },
   'copy': async (el) => {
     try {
-      await navigator.clipboard.writeText(el.dataset.text || '');
+      await copyText(el.dataset.text || '');
       toast(t('toast.copied'), 'success', 1600);
     } catch { toast(t('toast.copyFailed'), 'error'); }
   },
@@ -1660,7 +2001,12 @@ document.addEventListener('click', (ev) => {
   // native dropdown is open would close it again immediately
   if (ev.target.matches('select, option')) return;
   const el = ev.target.closest('[data-action]');
-  if (!el) return;
+  if (!el) {
+    // a click that hits no action still closes an open file-row menu
+    if (state.filesMenu) { state.filesMenu = null; rerender(); }
+    return;
+  }
+  if (state.filesMenu && el.dataset.action !== 'files-menu') state.filesMenu = null;
   const handler = actions[el.dataset.action];
   if (!handler) return;
   if (ev.target.closest('a') && el.dataset.action !== 'open-external') return;
@@ -1675,6 +2021,27 @@ document.addEventListener('click', (ev) => {
   } catch (err) {
     notifyError(err);
   }
+});
+
+// double-click a row: enter the folder / open the file. Right-click opens the
+// same row menu the ⋯ button shows — no need to hit the small button.
+document.addEventListener('dblclick', (ev) => {
+  const row = ev.target.closest('tr.file-row');
+  if (!row || !row.dataset.rel) return;
+  if (row.dataset.dir === '1') refreshFiles(row.dataset.rel);
+  else call(api.files.reveal(state.activeId, row.dataset.rel, true)).catch(notifyError);
+});
+
+document.addEventListener('contextmenu', (ev) => {
+  const row = ev.target.closest('tr.file-row');
+  if (!row) return;   // everywhere else the platform menu stays untouched
+  ev.preventDefault();
+  state.filesMenu = row.dataset.rel;
+  rerender();
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && state.filesMenu) { state.filesMenu = null; rerender(); }
 });
 
 document.addEventListener('change', async (ev) => {
@@ -1779,6 +2146,12 @@ document.addEventListener('input', async (ev) => {
     rerender();
     return;
   }
+  // files tab: filter the rows in place — no re-render, so the caret stays put
+  if (ev.target.id === 'files-filter') {
+    state.filesFilter = ev.target.value;
+    applyFilesFilter();
+    return;
+  }
   // wizard: keep the Next button in sync with what was typed, filter live
   if (ev.target.closest('.modal')) {
     syncWizardFromDom();
@@ -1835,25 +2208,25 @@ api.onServerEvent(async (ev) => {
     if (!state.statuses[id]) state.statuses[id] = {};
     state.statuses[id].install = payload.phase === 'done' ? null : payload;
     if (payload.phase === 'error') toast(payload.message, 'error', 8000);
-    rerender();
+    rerender({ force: false });
     return;
   }
   if (type === 'state') {
     if (!state.statuses[id]) state.statuses[id] = {};
     Object.assign(state.statuses[id], { state: payload.state, pid: payload.pid, startedAt: payload.startedAt });
-    refreshInstances().then(() => { rerender(); refreshStatuses().then(rerender); });
+    refreshInstances().then(() => { rerender({ force: false }); refreshStatuses().then(() => rerender({ force: false })); });
     return;
   }
   if (type === 'players') {
     if (!state.statuses[id]) state.statuses[id] = {};
     state.statuses[id].players = payload;
-    rerender();
+    rerender({ force: false });
     return;
   }
   if (type === 'metrics') {
     if (!state.statuses[id]) state.statuses[id] = {};
     state.statuses[id].metrics = payload;
-    if (state.tab === 'overview') rerender();
+    if (state.tab === 'overview') rerender({ force: false });
     return;
   }
   if (type === 'updated' || type === 'created' || type === 'deleted') {
@@ -1870,7 +2243,7 @@ api.onServerEvent(async (ev) => {
   }
   if (type === 'status') {
     state.statuses[id] = payload;
-    rerender();
+    rerender({ force: false });
   }
 });
 
@@ -1890,13 +2263,13 @@ async function boot() {
     notifyError(err);
   }
   render();
-  // periodic status refresh
-  setInterval(() => { refreshStatuses().then(rerender).catch(() => {}); }, 3000);
+  // periodic status refresh — background updates, so they never take the caret
+  setInterval(() => { refreshStatuses().then(() => rerender({ force: false })).catch(() => {}); }, 3000);
   setInterval(() => {
     call(api.monetize.suggest()).then((u) => {
       const changed = JSON.stringify(u) !== JSON.stringify(state.upsell);
       state.upsell = u;
-      if (changed) rerender();
+      if (changed) rerender({ force: false });
     }).catch(() => {});
   }, 60000);
 }

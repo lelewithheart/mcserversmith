@@ -9,6 +9,8 @@
  * JSON report. Exits non-zero if a check fails. Used by CI and by hand.
  */
 const { createLogger } = require('./core/util');
+const fs = require('fs');
+const path = require('path');
 
 const log = createLogger('smoke');
 
@@ -242,6 +244,23 @@ function script() {
     if (cancel3) cancel3.click();
     await sleep(300);
 
+    // ---- the in-app dialog helper itself --------------------------------
+    // Electron does not implement window.prompt(), so every text prompt in the
+    // app has to come from openDialog(). Probe it directly before testing the
+    // features that use it.
+    const probePromise = askText({ title: 'probe', body: 'probe' });
+    await sleep(250);
+    const probeInput = $('#dialog-input');
+    const probeCancel = document.querySelector('[data-dialog="cancel"]');
+    const probeOpened = !!probeInput;
+    if (probeCancel) probeCancel.click();
+    // never await a dialog without a timeout: a dialog that never opens would
+    // hang the whole smoke run instead of failing it
+    const probeValue = await Promise.race([probePromise, sleep(3000).then(() => 'TIMEOUT')]);
+    ok('in-app text dialog opens, cancels and cleans up',
+      probeOpened && probeValue === null && !$('#dialog-input'),
+      'opened=' + probeOpened + ' value=' + JSON.stringify(probeValue) + ' cleanedUp=' + !$('#dialog-input'));
+
     // ---- files tab ------------------------------------------------------
     const made = await window.mcss.instances.create({
       name: 'files-smoke', provider: 'paper', mcVersion: '1.21.4',
@@ -305,6 +324,147 @@ function script() {
       ok('files: world appears once it exists', /Welt|World/.test(filled));
       ok('files: mods entry is not shown for a plugin server', !/Mod-Konfigurationen|Mod configs/.test(filled));
 
+      // ---- the actions that used to be broken or stolen --------------------
+      // Electron has no window.prompt(): the old "New folder" and "Rename" called
+      // it, so both silently did nothing in the packaged app.
+      let promptUsable = true;
+      try { promptUsable = typeof prompt('smoke') === 'string'; } catch { promptUsable = false; }
+      ok('app does not depend on window.prompt (Electron lacks it)', promptUsable === false,
+        'typeof prompt -> ' + typeof prompt);
+
+      const mkBtn = document.querySelector('[data-action="files-mkdir"]');
+      ok('files toolbar has a New folder button', !!mkBtn);
+      if (mkBtn) { mkBtn.click(); await sleep(600); }
+      const mkInput = $('#dialog-input');
+      const mkDiag = mkInput ? '' : 'backdrops=' + document.querySelectorAll('.modal-backdrop').length
+        + ' handler=' + typeof actions['files-mkdir']
+        + ' toasts=' + [...document.querySelectorAll('.toast')].map((t2) => t2.textContent).join('/');
+      ok('new folder opens an in-app dialog', !!mkInput, mkDiag);
+      if (mkInput) {
+        mkInput.value = 'ui-made';
+        const okBtn = document.querySelector('[data-dialog="ok"]');
+        if (okBtn) okBtn.click();
+        await sleep(1400);
+        const listed = await window.mcss.files.list(instId, '');
+        ok('new folder created it on disk', !!listed.data && listed.data.entries.some((e) => e.name === 'ui-made' && e.dir));
+        ok('dialog closes after submitting', !$('#dialog-input'));
+      }
+
+      // the row menu lives in the advanced browser: the simple view deliberately
+      // lists only the entries a server owner actually touches, so a brand-new
+      // folder is not one of them
+      const advBtn2 = document.querySelector('[data-action="files-mode"][data-mode="advanced"]');
+      ok('advanced view switch available for the row menu', !!advBtn2);
+      if (advBtn2) { advBtn2.click(); await sleep(1200); }
+      await refreshFiles('');
+      await sleep(700);
+      const rowFor = (name) => [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === name);
+      const mkRow = rowFor('ui-made');
+      ok('the new folder has a row with a menu button', !!mkRow && !!mkRow.querySelector('[data-action="files-menu"]'));
+      if (mkRow) {
+        mkRow.querySelector('[data-action="files-menu"]').click();
+        await sleep(350);
+        const renameItem = [...document.querySelectorAll('.menu .menu-item')].find((b) => b.dataset.action === 'files-rename');
+        ok('row menu opens and offers rename', !!renameItem);
+        if (renameItem) {
+          renameItem.click();
+          await sleep(450);
+          const renInput = $('#dialog-input');
+          ok('rename dialog is prefilled with the current name', !!renInput && renInput.value === 'ui-made',
+            renInput ? renInput.value : 'no input');
+          if (renInput) {
+            renInput.value = 'ui-renamed';
+            const okBtn2 = document.querySelector('[data-dialog="ok"]');
+            if (okBtn2) okBtn2.click();
+            await sleep(1400);
+            const after = await window.mcss.files.list(instId, '');
+            ok('rename renamed it on disk',
+              !!after.data && after.data.entries.some((e) => e.name === 'ui-renamed')
+              && !after.data.entries.some((e) => e.name === 'ui-made'));
+            ok('row menu closed after the action', !$('.menu'));
+          }
+        }
+      }
+
+      await refreshFiles('');
+      await sleep(700);
+      const delRow = rowFor('ui-renamed');
+      if (delRow) {
+        delRow.querySelector('[data-action="files-menu"]').click();
+        await sleep(350);
+        const delItem = [...document.querySelectorAll('.menu .menu-item')].find((b) => b.dataset.action === 'files-delete');
+        ok('row menu offers delete', !!delItem);
+        if (delItem) {
+          delItem.click();
+          await sleep(450);
+          ok('delete asks first (in-app confirm, no prompt)', !!$('.dialog') && !$('#dialog-input'));
+          const okBtn3 = document.querySelector('[data-dialog="ok"]');
+          if (okBtn3) okBtn3.click();
+          await sleep(1400);
+          const after = await window.mcss.files.list(instId, '');
+          ok('delete removed it on disk', !!after.data && !after.data.entries.some((e) => e.name === 'ui-renamed'));
+        }
+      }
+
+      // ---- typing survives the 3 s status poll -----------------------------
+      // Before: #content was rebuilt from innerHTML on every poll tick, which
+      // replaced the focused field (text gone, caret gone) and detached any open
+      // select popup.
+      state.tab = 'files';
+      await refreshFiles('');
+      await sleep(700);
+      const filterEl = $('#files-filter');
+      ok('files tab has a filter box', !!filterEl);
+      if (filterEl) {
+        filterEl.focus();
+        filterEl.value = 'serv';
+        filterEl.dispatchEvent(new Event('input', { bubbles: true }));
+        const rowsAll = document.querySelectorAll('tr.file-row').length;
+        await sleep(4300);
+        const filterEl2 = $('#files-filter');
+        ok('filter box is still the same DOM node after a poll', filterEl2 === filterEl);
+        ok('filter keeps its text after a poll', !!filterEl2 && filterEl2.value === 'serv', filterEl2 ? filterEl2.value : 'gone');
+        ok('filter keeps the focus after a poll', document.activeElement === filterEl2,
+          'activeElement: ' + (document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : 'none'));
+        const visibleRows = [...document.querySelectorAll('tr.file-row')].filter((tr) => tr.style.display !== 'none').length;
+        ok('filter hides the non-matching rows', visibleRows > 0 && visibleRows < rowsAll, visibleRows + ' of ' + rowsAll + ' rows');
+        state.filesFilter = '';
+        if (filterEl2) { filterEl2.value = ''; filterEl2.dispatchEvent(new Event('input', { bubbles: true })); }
+      }
+
+      // a focused <select> must not be replaced either — that is what snapped
+      // every open dropdown shut a few seconds after opening it
+      state.tab = 'config';
+      rerender();
+      await sleep(1000);
+      const selEl = document.querySelector('#content select[data-prop]');
+      ok('config tab has a select', !!selEl);
+      if (selEl) {
+        selEl.focus();
+        await sleep(4300);
+        const selEl2 = document.querySelector('#content select[data-prop]');
+        ok('select node survives a poll while focused', selEl2 === selEl);
+        ok('select keeps the focus', document.activeElement === selEl2,
+          'activeElement: ' + (document.activeElement ? (document.activeElement.dataset.prop || document.activeElement.tagName) : 'none'));
+      }
+
+      // console: the command box used to grab the focus from the filter box on
+      // every re-mount, and the log jumped back to the bottom
+      state.tab = 'console';
+      rerender();
+      await sleep(1000);
+      const conFilter = $('#console-filter');
+      ok('console tab has a filter box', !!conFilter);
+      if (conFilter) {
+        conFilter.focus();
+        conFilter.value = 'x';
+        conFilter.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(4300);
+        ok('console filter keeps focus and text across a poll',
+          document.activeElement === conFilter && conFilter.value === 'x',
+          'focus: ' + (document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : 'none') + ' value: ' + conFilter.value);
+      }
+
       await window.mcss.instances.remove(instId, true);
     }
 
@@ -313,13 +473,15 @@ function script() {
   })()`;
 }
 
-async function run({ window }) {
+async function run({ window, probe }) {
   const wc = window.webContents;
   await new Promise((resolve) => {
     if (!wc.isLoading()) resolve();
     else wc.once('did-finish-load', resolve);
   });
   await new Promise((r) => setTimeout(r, READY_DELAY_MS));
+
+  const trayBefore = probe ? probe.trayStats() : null;
 
   let report;
   try {
@@ -329,12 +491,33 @@ async function run({ window }) {
     return 2;
   }
 
-  const failed = (report.checks || []).filter((c) => !c.ok);
-  console.log('\n=== UI smoke test ===');
-  for (const c of report.checks || []) {
-    console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
+  const ok = (name, cond, detail) => report.checks.push({ name, ok: !!cond, detail: detail === undefined ? '' : String(detail) });
+
+  // ---- main-process checks -------------------------------------------------
+  // The renderer script above runs for ~40 s, spanning several tray intervals.
+  if (probe) {
+    const after = probe.trayStats();
+    ok('tray menu is not rebuilt on a timer', after.builds === trayBefore.builds,
+      `builds ${trayBefore.builds} -> ${after.builds} over the whole run`);
+    const built = await probe.trayMenu();
+    ok('tray menu builds on demand', built.builds === after.builds + 1 && built.labels.some((l) => /MCServerSmith/.test(l)),
+      `${built.builds} builds, items: ${built.labels.slice(0, 3).join(' / ')}`);
   }
-  console.log(`\n${(report.checks || []).length - failed.length}/${(report.checks || []).length} UI checks passed`);
+
+  const failed = (report.checks || []).filter((c) => !c.ok);
+  const lines = ['=== UI smoke test ==='];
+  for (const c of report.checks || []) {
+    lines.push(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
+  }
+  lines.push('', `${(report.checks || []).length - failed.length}/${(report.checks || []).length} UI checks passed`);
+  const text = lines.join('\n');
+  console.log(`\n${text}`);
+  // also write it next to the app log: app.exit() is abrupt and has swallowed
+  // the whole report when stdout was a pipe
+  try {
+    const { getDirs } = require('./core/paths');
+    fs.writeFileSync(path.join(getDirs().appLogDir || path.dirname(getDirs().appLog), 'ui-smoke.log'), `${text}\n`);
+  } catch { /* the console output is the fallback */ }
   log.info(`smoke test finished: ${(report.checks || []).length - failed.length}/${(report.checks || []).length}`);
   return failed.length ? 1 : 0;
 }

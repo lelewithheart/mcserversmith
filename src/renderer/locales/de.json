@@ -14,6 +14,8 @@
   "nav.servers": "Server",
 
   "common.loading": "Lädt…",
+  "common.ok": "OK",
+  "common.cancel": "Abbrechen",
 
   "welcome.title": "Dein eigener Minecraft-Server, in etwa einer Minute",
   "welcome.subtitle": "Version wählen, Sorte wählen, Starten drücken. MCServerSmith lädt die Serverdateien und genau die passende Java-Runtime herunter — kein Terminal, keine Wiki-Seiten, kein Port-Forwarding.",
@@ -236,6 +238,11 @@
   "files.addHere": "Dateien in diesen Ordner legen",
   "files.refresh": "Aktualisieren",
   "files.refreshed": "Ordner aktualisiert",
+  "files.filter": "Dateien filtern…",
+  "files.more": "Aktionen",
+  "files.open": "Öffnen",
+  "files.copyPath": "Pfad kopieren",
+  "files.noMatch": "Nichts passt zum Filter.",
   "files.openFolder": "Im Dateimanager öffnen",
   "files.rename": "Umbenennen",
   "files.delete": "Löschen",
@@ -281,6 +288,7 @@
   "license.activateBtn": "Aktivieren",
   "license.activated": "Key aktiviert — danke!",
   "license.removed": "Key entfernt",
+  "license.remove": "Key entfernen",
   "license.removePrompt": "Füge den vollständigen Key ein, den du entfernen willst:",
   "license.never": "nie",
   "license.offlineHint": "Keys werden offline per Signatur geprüft — kein Konto, kein Server, kein Telemetry. Der Key verlässt diesen Rechner nie.",
