@@ -19,10 +19,31 @@ Alle Zahlen unten kommen aus echten Testläufen, nicht aus Absichtserklärungen.
 | `npm run test:headless` (Paper 1.21.4) | Jar + Java 21 geladen, Server gestartet (`Done (23.189s)!`), SLP-Ping, RCON, Konsolenbefehl, Backup, graceful Stop in 3 s → **27/27** |
 | `npm run test:headless --provider=fabric` | Fabric-Installer → `fabric-server-launch.jar`, online in 26 s, Backup 262 KB, Welt 419 KB → **27/27** |
 | `node tools/test-instance.js --data=.devdata-inspect-forge` | Forge 1.20.1: Installer 114 s, Script-Mode über Argfiles, online in 27–39 s, MOTD sichtbar, Stop in 3 s → **8/8** |
+| `npm run test:headless --provider=neoforge` | NeoForge 1.21.4: Installer 75 s, Script-Mode, online in 22 s, MOTD, RCON, Backup 280 KB, Stop in 2 s → **26/26** |
+| `npm run test:headless --provider=spigot` | Spigot 1.20.1: BuildTools-Compile 513 s, `spigot-1.20.1.jar`, online in 52 s, Backup 5,3 MB, Stop in 4 s → **27/27** |
 | `npm run test:ui` | echter Electron-Start, UI durchgeklickt (Wizard inkl. Live-Button, 4 Views, Sprachwechsel) → **27/27** |
+| `dist/win-unpacked/MCServerSmith.exe` (Smoke-Mode) | **gepackte App** startet, i18n aus dem asar, Live-API-Calls, alle Views → **27/27** |
+| `npm run dist:win` | NSIS-Installer gebaut: `win-x64.exe` (111 MB), `win-arm64.exe` (105 MB), kombiniert (216 MB) |
 | `npm run test:license` | Keys minten/aktivieren/Manipulation+Abgelaufen ablehnen/Features gaten/Rückfall auf Free → **14/14** |
 | `npm run test:backup` | tar.gz erstellt, Restore bringt `level.dat` zurück, Retention räumt auf → **7/7** |
 | `npm run check:i18n` | 246 benutzte Keys, EN + DE vollständig, 0 fehlend |
+
+### Verifikationsmatrix aller 9 Server-Typen
+
+| Typ | Artifact-Auflösung (Live-API) | Server real gestartet |
+|---|---|---|
+| Vanilla | ✓ | – (identischer jar-Mode-Pfad wie Spigot/Paper) |
+| Paper | ✓ | ✓ 27/27 |
+| Purpur | ✓ | – (identischer jar-Mode-Pfad) |
+| Folia | ✓ | – (identischer jar-Mode-Pfad) |
+| Fabric | ✓ | ✓ 27/27 |
+| Forge | ✓ | ✓ 8/8 |
+| NeoForge | ✓ | ✓ 26/26 |
+| Spigot | ✓ | ✓ 27/27 (BuildTools) |
+| Velocity | ✓ | – (Proxy, gleicher jar-Mode-Pfad) |
+
+Alles, was nicht real gestartet wurde, nutzt exakt den Launch-Pfad, der von Paper/Spigot
+(jar-Mode) verifiziert ist — kein eigener Code-Ast.
 
 ### Funktionen
 
@@ -115,11 +136,12 @@ wird zum direkten Kauf.
 
 ## 4. Bekannte Grenzen (ehrlich)
 
-- **NeoForge und Spigot sind nicht real durchgespielt.** NeoForge nutzt denselben
-  Installer/Script-Mode-Pfad wie Forge (der jetzt verifiziert ist), Spigot braucht BuildTools
-  mit `git` und 5–30 Minuten Compile. Beide sind als „advanced" markiert bzw. warnen vorher.
 - **UPnP** funktioniert nur, wenn der Router es erlaubt — im Test war keiner erreichbar, die
   Fehlermeldung ist aber korrekt und CGNAT wird explizit erkannt.
+- **Vanilla, Purpur, Folia und Velocity** wurden beim Artifact-Resolve verifiziert, aber nicht
+  separat gestartet. Sie nutzen denselben jar-Mode-Launch-Pfad wie Paper und Spigot (beide
+  27/27) — es gibt dort keinen eigenen Code-Ast, aber gestartet habe ich sie nicht.
+- **Spigot** dauert real 513 s (BuildTools) und braucht `git` — der Test hat das bestätigt.
 - **Tunnel-IP-Erhalt:** über reines TCP sehen alle Spieler wie eine IP aus. frp kann PROXY-Protokoll,
   das braucht serverseitig HAProxyDetector. Steht auch so in der UI.
 - **Windows-SmartScreen** warnt bei unsignierten Builds (EV-Zertifikat nötig, ~300 €/Jahr).

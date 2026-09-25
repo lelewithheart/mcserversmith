@@ -97,7 +97,10 @@ async function main() {
     port: PORT,
     rconPort: PORT + 1000,
     acceptEula: true,
-    maxPlayers: 5
+    maxPlayers: 5,
+    // advanced providers (Spigot/BuildTools) require the caller to acknowledge
+    // the warnings — the harness is a power user, so it confirms automatically
+    confirmedAdvanced: true
   });
   record('instance created', !!meta.id, meta.id);
   record('directory layout', fs.existsSync(instances.instancePaths(meta.id).server), instances.instancePaths(meta.id).dir);
