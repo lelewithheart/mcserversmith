@@ -84,8 +84,24 @@ statt Absichtserklärungen stehen.
    (`java @user_jvm_args.txt @libraries/.../win_args.txt nogui`), Skript bleibt Fallback,
    PATH/JAVA_HOME werden zusätzlich korrigiert.
 
-Dazu ein UI-Bug: der „Weiter"-Button im Wizard wurde beim Tippen nicht aktiv, weil sein
-Disabled-Zustand im Markup eingebacken war — Schritt 1 war damit eine Sackgasse (behoben).
+Dazu zwei UI-Bugs aus dem echten Test:
+
+5. **Checkboxen im Wizard waren komplett tot.** Der delegierte Klick-Handler rief
+   bedingungslos `preventDefault()`. Weil der Modal-Backdrop selbst `data-action` trägt,
+   traf `closest('[data-action]')` für *jeden* Klick im Dialog den Backdrop — und
+   `preventDefault()` auf einem Checkbox-Klick macht den Toggle rückgängig. Die
+   EULA-Bestätigung und die „advanced"-Bestätigung waren damit unerreichbar: der Wizard
+   war nicht abschließbar. Formular-Controls sind jetzt von `preventDefault()` ausgenommen,
+   Selects laufen nur noch über `change` (ein Re-Render würde das offene Dropdown zuklappen),
+   und Change-Handler nutzen die `data-action` des Controls selbst statt `closest()`.
+   Zusätzlich: Checkbox-Änderungen an `server.properties`, Instanz-Flags und Tunnel-Optionen
+   speichern jetzt sofort statt still auf den Save-Button zu warten.
+6. **Das Sprach-Dropdown in den Einstellungen tat nichts** — es hatte weder `data-action`
+   noch `data-setting`, speicherte also nie und lud das Wörterbuch nicht nach. Jetzt lädt es
+   die Sprache nach und rendert neu (im Test: Titel wechselt auf „Einstellungen").
+
+Der UI-Smoketest deckt genau diese Pfade ab und läuft von 27 auf **42 Checks** — inklusive
+„Checkbox togglet", „Button entsperrt sich" und „Sprachwechsel wirkt".
 
 ---
 
