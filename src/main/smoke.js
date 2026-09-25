@@ -135,6 +135,100 @@ function script() {
       ok('view ' + view + ' renders', html.length > 150 && html.toLowerCase().includes(needle.toLowerCase().slice(0, 4)), html.length + ' chars');
     }
 
+    // ---- settings: checkboxes + language dropdown -----------------------
+    const settingsBtn = document.querySelector('[data-action="goto"][data-view="settings"]');
+    if (settingsBtn) settingsBtn.click();
+    await sleep(900);
+
+    const cbSel = '#content input[data-setting="closeToTray"]';
+    const cb0 = $(cbSel);
+    ok('settings checkbox present', !!cb0);
+    if (cb0) {
+      const before = cb0.checked;
+      cb0.click();
+      await sleep(800);
+      const cb1 = $(cbSel);
+      const after = cb1 ? cb1.checked : null;
+      ok('settings checkbox toggles on click', after === !before, String(before) + ' -> ' + String(after) + (cb1 ? '' : ' (element gone)'));
+      const stored = (await window.mcss.app.getSettings()).data.closeToTray;
+      ok('settings checkbox persists', stored === after, 'stored=' + stored + ' dom=' + after);
+      if (cb1) { cb1.click(); await sleep(600); }   // put it back
+    }
+
+    const langSel = $('#setting-language');
+    ok('settings language dropdown present', !!langSel);
+    if (langSel) {
+      const before = langSel.value;
+      langSel.value = 'de';
+      langSel.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(1000);
+      const title = ($('#view-title') || {}).textContent || '';
+      const stored = (await window.mcss.app.getSettings()).data.language;
+      ok('settings language dropdown switches UI', stored === 'de' && !/server, in about/i.test(title), 'stored=' + stored + ' title="' + title.slice(0, 40) + '"');
+      // and back
+      const back = $('#setting-language');
+      if (back) {
+        back.value = 'en';
+        back.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(900);
+      }
+      ok('language reverts to english', ((await window.mcss.app.getSettings()).data.language) === 'en', before + ' -> ' + ((await window.mcss.app.getSettings()).data.language));
+    }
+
+    // ---- wizard checkboxes: the bug that made the wizard unusable -------
+    // Spigot is an "advanced" provider: step 1 refuses to continue until the
+    // user ticks the acknowledgement box, so this exercises both the checkbox
+    // toggle itself and the button it gates.
+    const newBtn2 = document.querySelector('[data-action="new-server"]');
+    if (newBtn2) { newBtn2.click(); await sleep(800); }
+    const name2 = $('#wz-name');
+    if (name2) {
+      name2.value = 'checkbox-test';
+      name2.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await sleep(200);
+    const spigotCard = [...document.querySelectorAll('.type-card')].find((c) => /Spigot/i.test(c.textContent));
+    ok('spigot type card present', !!spigotCard);
+    if (spigotCard) { spigotCard.click(); await sleep(2600); }
+
+    const advBox = $('#wz-advanced');
+    ok('advanced acknowledgement checkbox shown', !!advBox);
+    const nextBefore = document.querySelector('[data-action="wizard-next"]');
+    ok('next blocked until acknowledged', !!nextBefore && nextBefore.disabled === true, nextBefore ? String(nextBefore.disabled) : 'no button');
+    if (advBox) {
+      advBox.click();
+      await sleep(500);
+      const advAfter = $('#wz-advanced');
+      ok('wizard checkbox toggles', !!advAfter && advAfter.checked === true, advAfter ? String(advAfter.checked) : 'gone');
+      const nextAfter = document.querySelector('[data-action="wizard-next"]');
+      ok('next unblocks after acknowledging', !!nextAfter && nextAfter.disabled === false, nextAfter ? String(nextAfter.disabled) : 'no button');
+    }
+
+    // walk to the last step and confirm the EULA box enables "Create and install"
+    let step = 1;
+    for (;;) {
+      const btn = document.querySelector('[data-action="wizard-next"]');
+      if (!btn || btn.disabled) break;
+      btn.click();
+      await sleep(step === 1 ? 2600 : 900);
+      step += 1;
+      if (step > 4) break;
+    }
+    ok('wizard reached the final step', step >= 4, 'step ' + step);
+    const eulaBox = $('#wz-eula');
+    ok('eula checkbox present on the final step', !!eulaBox);
+    const createBefore = document.querySelector('[data-action="wizard-create"]');
+    ok('create blocked before eula is accepted', !!createBefore && createBefore.disabled === true, createBefore ? String(createBefore.disabled) : 'no button');
+    if (eulaBox) {
+      eulaBox.click();
+      await sleep(500);
+      const createAfter = document.querySelector('[data-action="wizard-create"]');
+      ok('create unblocks after accepting the eula', !!createAfter && createAfter.disabled === false, createAfter ? String(createAfter.disabled) : 'no button');
+    }
+    const cancel3 = document.querySelector('[data-action="wizard-cancel"]');
+    if (cancel3) cancel3.click();
+    await sleep(300);
+
     ok('no uncaught renderer errors', out.consoleErrors.length === 0, out.consoleErrors.join(' | '));
     return out;
   })()`;

@@ -71,6 +71,7 @@ const state = {
   wizard: null,
   busy: {},
   autoScroll: true,
+  autoScrollManual: false,
   lastConsoleId: null
 };
 
@@ -653,7 +654,7 @@ function viewSettings() {
     <div class="card">
       <h3>${esc(t('settings.general'))}</h3>
       <label class="field"><span>${esc(t('settings.language'))}</span>
-        <select class="select" id="setting-language">
+        <select class="select" id="setting-language" data-action="setting-language">
           ${(state.languages.length ? state.languages : [{ code: 'en', name: 'English' }]).map((l) => `<option value="${esc(l.code)}" ${s.language === l.code ? 'selected' : ''}>${esc(l.name || l.code)}</option>`).join('')}
         </select></label>
       <label class="check"><input type="checkbox" data-setting="closeToTray" ${s.closeToTray ? 'checked' : ''} /><span>${esc(t('settings.closeToTray'))}</span></label>
@@ -806,9 +807,12 @@ function mountConsole() {
   out.scrollTop = out.scrollHeight;
   out.addEventListener('scroll', () => {
     const nearBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-    state.autoScroll = nearBottom;
-    const cb = $('#console-autoscroll');
-    if (cb) cb.checked = nearBottom;
+    // an explicit click on the auto-scroll toggle wins until the user scrolls again
+    if (!state.autoScrollManual) {
+      state.autoScroll = nearBottom;
+      const cb = $('#console-autoscroll');
+      if (cb) cb.checked = nearBottom;
+    }
   });
   const input = $('#console-cmd');
   if (input) {
@@ -1438,6 +1442,15 @@ const actions = {
     try { await call(api.monetize.dismiss(el.dataset.kind)); } catch { /* ignore */ }
     rerender();
   },
+  // Settings tab language picker — must reload the dictionary, not just store it
+  'setting-language': async (el) => {
+    const code = el.value;
+    state.settings = await call(api.app.setSettings({ language: code }));
+    await loadLanguage(code);
+    renderLanguageSelect();
+    rerender();
+    toast(t('toast.saved'), 'success', 1400);
+  },
   'modal-backdrop': (el, ev) => { if (ev.target === el) closeModal(); },
   'wizard-cancel': () => closeModal(),
   'wizard-type': async (el) => {
@@ -1469,12 +1482,20 @@ const actions = {
 };
 
 document.addEventListener('click', (ev) => {
+  // selects fire their action on 'change', not on click — re-rendering while the
+  // native dropdown is open would close it again immediately
+  if (ev.target.matches('select, option')) return;
   const el = ev.target.closest('[data-action]');
   if (!el) return;
   const handler = actions[el.dataset.action];
   if (!handler) return;
   if (ev.target.closest('a') && el.dataset.action !== 'open-external') return;
-  ev.preventDefault();
+  // NEVER preventDefault a click on a form control: cancelling a checkbox/radio
+  // click reverts the toggle. This killed every checkbox inside the wizard,
+  // because the modal backdrop carries data-action and therefore matched
+  // closest('[data-action]') for anything inside the dialog.
+  const isControl = ev.target.matches('input, textarea, label');
+  if (!isControl) ev.preventDefault();
   try {
     handler(el, ev);
   } catch (err) {
@@ -1483,34 +1504,94 @@ document.addEventListener('click', (ev) => {
 });
 
 document.addEventListener('change', async (ev) => {
-  const el = ev.target.closest('[data-action]');
-  if (!el) {
-    // wizard fields (snapshots toggle -> reload the version list)
-    if (ev.target.closest('.modal')) {
-      syncWizardFromDom();
-      if (ev.target.id === 'wz-snapshots') {
-        const w = state.wizard;
-        if (w) w.mcVersion = '';
-        await loadWizardVersions();
-        renderWizard();
-      } else {
-        updateWizardButtons();
-        if (ev.target.id === 'wz-loader' || ev.target.id === 'wz-gamemode' || ev.target.id === 'wz-difficulty') renderWizard();
-      }
-      return;
-    }
-    const s = ev.target.closest('[data-setting]');
-    if (s) {
-      const key = s.dataset.setting;
-      const value = s.type === 'checkbox' ? s.checked : (s.type === 'number' ? Number(s.value) : s.value);
-      state.settings = await call(api.app.setSettings({ [key]: value }));
-      rerender();
+  const target = ev.target;
+
+  // A control's OWN data-action wins (change events bubble to the backdrop too,
+  // so closest() would be wrong here).
+  const ownAction = target.dataset ? target.dataset.action : null;
+  if (ownAction && actions[ownAction]) {
+    try { await actions[ownAction](target, ev); } catch (err) { notifyError(err); }
+    return;
+  }
+
+  // wizard fields (snapshots toggle -> reload the version list)
+  if (target.closest('.modal')) {
+    syncWizardFromDom();
+    if (target.id === 'wz-snapshots') {
+      const w = state.wizard;
+      if (w) { w.mcVersion = ''; state.loaders[w.provider] = []; }
+      await loadWizardVersions();
+      renderWizard();
+    } else {
+      updateWizardButtons();
+      if (target.id === 'wz-loader' || target.id === 'wz-gamemode' || target.id === 'wz-difficulty') renderWizard();
     }
     return;
   }
-  const handler = actions[el.dataset.action];
-  if (handler) {
-    try { await handler(el, ev); } catch (err) { notifyError(err); }
+
+  // console auto-scroll: an explicit click must stick, so mark it manual
+  if (target.id === 'console-autoscroll') {
+    state.autoScroll = target.checked;
+    state.autoScrollManual = true;
+    if (target.checked) {
+      const out = $('#console-output');
+      if (out) out.scrollTop = out.scrollHeight;
+    }
+    return;
+  }
+
+  // application settings
+  const s = target.closest('[data-setting]');
+  if (s) {
+    const key = s.dataset.setting;
+    const value = s.type === 'checkbox' ? s.checked : (s.type === 'number' ? Number(s.value) : s.value);
+    state.settings = await call(api.app.setSettings({ [key]: value }));
+    rerender();
+    return;
+  }
+
+  // server.properties checkbox -> persist immediately instead of silently
+  // waiting for the Save button (that is what made checkboxes feel dead)
+  if (target.matches('input[type=checkbox][data-prop]')) {
+    const inst = state.instances.find((i) => i.id === state.activeId);
+    if (!inst) return;
+    const patch = {};
+    for (const input of $$('[data-prop]')) {
+      patch[input.dataset.prop] = input.type === 'checkbox' ? String(input.checked) : input.value;
+    }
+    try {
+      state.props[inst.id] = await call(api.props.set(inst.id, patch));
+      toast(t('toast.saved'), 'success', 1400);
+    } catch (err) { notifyError(err); }
+    return;
+  }
+
+  // launcher/instance checkboxes (auto-restart, schedule)
+  if (target.matches('input[type=checkbox][data-inst][data-field]')) {
+    try {
+      await call(api.instances.update(target.dataset.inst, { [target.dataset.field]: target.checked }));
+      await refreshInstances();
+      rerender();
+    } catch (err) { notifyError(err); }
+    return;
+  }
+
+  // tunnel options (e.g. PROXY protocol)
+  if (target.matches('input[type=checkbox][data-tunnel]')) {
+    const inst = state.instances.find((i) => i.id === state.activeId);
+    if (!inst) return;
+    const patch = { ...(inst.tunnel || {}) };
+    for (const input of $$('[data-tunnel]')) {
+      patch[input.dataset.tunnel] = input.type === 'checkbox'
+        ? input.checked
+        : (input.type === 'number' ? Number(input.value) : input.value);
+    }
+    try {
+      await call(api.instances.update(inst.id, { tunnel: patch }));
+      await refreshInstances();
+      toast(t('toast.saved'), 'success', 1400);
+    } catch (err) { notifyError(err); }
+    return;
   }
 });
 
