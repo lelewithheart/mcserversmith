@@ -28,8 +28,8 @@
     "icon": "node tools/make-icon.js",
     "keygen": "node tools/keygen.js",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "devDependencies": {
     "electron": "^44.4.5",

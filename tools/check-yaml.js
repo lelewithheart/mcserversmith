@@ -54,6 +54,10 @@ try {
   report('build job waits for verify', !!(jobs.build && jobs.build.needs));
   report('build matrix is serialised (max-parallel)', !!(jobs.build && jobs.build.strategy && jobs.build.strategy['max-parallel'] === 1),
     'two jobs publishing into one release at the same time race with a 422');
+  const matrixScripts = ((((jobs.build || {}).strategy || {}).matrix || {}).include || [])
+    .map((entry) => String((entry && entry.script) || ''));
+  report('build matrix disables implicit publishing', matrixScripts.length > 0 && matrixScripts.every((s) => s.includes('--publish never')),
+    'without --publish never electron-builder can try to create releases in CI and fail with 403');
 } catch (err) {
   failed += 1;
   console.log(`FAIL  workflow sanity checks: ${err.message.split('\n')[0]}`);
