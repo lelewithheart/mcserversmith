@@ -51,10 +51,16 @@ jobs:
       max-parallel: 1
       matrix:
         include:
+          # No extra --publish flag here! `npm run dist:win` already ends in exactly
+          # one `--publish never`, and `npm run dist:win -- --publish never` would hand
+          # electron-builder the array ["never","never"]. Its CLI accepts that without
+          # complaint, compares it against the string "never", concludes publishing is
+          # enabled and creates a second, Windows-only release. That is how releases
+          # ended up split across duplicate drafts.
           - os: windows-latest
-            script: npm run dist:win -- --publish never
+            script: npm run dist:win
           - os: ubuntu-latest
-            script: npm run dist:linux -- --publish never
+            script: npm run dist:linux
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -66,14 +72,10 @@ jobs:
       - name: Generate icon
         run: node tools/make-icon.js
       - name: Build installers
-        # Artifacts only. electron-builder must never publish here: two jobs
-        # publishing into one tag race with a 422 and each create their own draft.
+        # Artifacts only. Deliberately no GH_TOKEN in this job: a token plus an
+        # enabled publish policy is all electron-builder needs to create its own
+        # release, and the only thing allowed to create one is the `release` job.
         run: ${{ matrix.script }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional code signing (Windows SmartScreen, macOS notarisation):
-          # CSC_LINK: ${{ secrets.CSC_LINK }}
-          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       - name: Checksums
         shell: bash
         run: |
@@ -89,7 +91,7 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
-            dist/*.yml
+            dist/latest*.yml
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14
@@ -122,12 +124,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Exactly one release per tag, created here and nowhere else, and both
-          # platforms go into it — so nobody has to hunt for the Linux files in a
-          # second, duplicate draft.
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          # The only place that touches a release: exactly one release per tag, one
+          # upload with both platforms in it, so nobody has to hunt for the Linux
+          # files in a second draft.
+          count=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq "[.[] | select(.tagName == \"$GITHUB_REF_NAME\")] | length")
+          if [ "$count" -eq 0 ]; then
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
               --draft --title "MCServerSmith ${GITHUB_REF_NAME#v}" --generate-notes
+          elif [ "$count" -gt 1 ]; then
+            # Duplicates of the same tag can only come from an old run that published
+            # implicitly. Stop instead of guessing which one to upload into.
+            echo "::error::$count releases exist for $GITHUB_REF_NAME — delete the duplicates first"
+            gh release list --repo "$GITHUB_REPOSITORY" --json tagName,name,isDraft --jq '.[]'
+            exit 1
           fi
           gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
       - name: Release contents

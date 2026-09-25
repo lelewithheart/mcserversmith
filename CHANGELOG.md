@@ -3,32 +3,38 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
-## [0.2.2] — 2026-09-25
+## [0.2.3] — 2026-09-25
 
-Release pipeline only, no product changes — but the releases users download are built here.
+Release pipeline only, no product changes — but this is the release users download.
 
 ### Fixed
 - **GitHub releases are no longer Windows-only.** CI did build both platforms, but the Linux
-  files never reached the release: publishing was disabled in the build jobs and the only
-  remaining release step pushed checksums. The AppImage and `.deb` stayed inside the run's
-  workflow artifacts while the draft release showed Windows only. There is now a dedicated
-  `release` job that downloads both platform artifacts and uploads everything — NSIS
-  installers, AppImages, `.deb`, update feeds and `.sha256` — into **one** release per tag.
-- **Two half-filled drafts for the same tag can no longer happen.** Both matrix jobs used to
-  publish concurrently, so each created its own draft and the assets were split across them
-  (that is where the v0.2.0 Linux files were hiding). Only the `release` job creates releases now.
-- **Version and tag are checked before building.** electron-builder derives the release tag from
-  `package.json`, not from the git ref, so a stale version publishes into the wrong release —
-  a `v0.2.1` build dropped its files into the `v0.2.0` draft. The `verify` job now fails when the
-  pushed tag and `package.json` disagree.
-- The `release` job refuses to publish a release without `.exe`, `.AppImage` and `.deb`, so a
-  half-built release fails the run instead of shipping silently.
-- `tools/check-yaml.js` asserts the above invariants, so a future workflow edit cannot remove the
-  release step unnoticed.
+  files never reached a release the user could see. Three independent defects stacked up:
+  1. The build jobs were called as `npm run dist:win -- --publish never` while the script itself
+     already ended in `--publish never`. The flag reached electron-builder **twice**, i.e. as the
+     array `["never","never"]`. Its CLI validates only string values, so the array slipped through,
+     the comparison against `"never"` was false and publishing counted as **enabled**.
+  2. electron-builder then published on its own — with the tag taken from `package.json`
+     (`v0.2.0`), not from the pushed git tag, so a `v0.2.1` build filled the `v0.2.0` release.
+  3. Both matrix jobs published concurrently and each created its own draft, splitting the assets:
+     Windows ended up in one draft, the AppImage/`.deb` in a second, duplicate one.
+  Now a single `release` job owns releases: it downloads both platform artifacts, asserts that
+  `.exe`, `.AppImage` and `.deb` are present, creates exactly one draft per tag and uploads
+  everything into it — installers, AppImages, `.deb`, update feeds and `.sha256`.
+- **The duplicate-flag trap is defused.** The workflow no longer appends `--publish`, all three
+  `npm run dist*` scripts carry exactly one `--publish never`, and the build jobs get no `GH_TOKEN`
+  at all, so electron-builder has neither a policy nor a token to publish with.
+- **Version and tag are checked before building.** A stale `package.json` version can no longer
+  publish into the wrong release; the `verify` job fails on a mismatch.
+- **Duplicate releases abort the run** instead of uploading into an arbitrary one of them.
+- `tools/check-yaml.js` now asserts all of the above (script flags, no appended flag, no token in
+  the build jobs, release job present, single upload, platform guard).
 
 ### Notes
-- `v0.2.1` is a CI tag without a release of its own; its content is included in 0.2.2.
-- `v0.2.0` was never published either — it exists as two drafts and is superseded by 0.2.2.
+- `v0.2.0`, `v0.2.1` and `v0.2.2` produced no usable release: 0.2.0/0.2.2 were duplicate drafts split
+  by platform, and 0.2.1 was published by hand from a local Windows build (its files are even named
+  `0.2.0`, because `package.json` still said 0.2.0), so it contained no Linux artifacts. All of them
+  are superseded by 0.2.3.
 
 ## [0.2.0] — 2026-09-25
 

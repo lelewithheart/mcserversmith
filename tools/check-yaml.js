@@ -67,8 +67,19 @@ try {
     /merge-multiple/.test(JSON.stringify(releaseJob.steps || [])));
   const matrixScripts = ((((jobs.build || {}).strategy || {}).matrix || {}).include || [])
     .map((entry) => String((entry && entry.script) || ''));
-  report('build matrix disables implicit publishing', matrixScripts.length > 0 && matrixScripts.every((s) => s.includes('--publish never')),
-    'without --publish never electron-builder can try to create releases in CI and fail with 403');
+  report('build matrix appends no publish flag',
+    matrixScripts.length > 0 && matrixScripts.every((s) => !s.includes('--publish')),
+    'a second --publish never reaches electron-builder as ["never","never"]; it accepts that without a word and publishes anyway');
+  report('build jobs carry no GH_TOKEN',
+    !JSON.stringify((jobs.build || {}).steps || []).includes('GH_TOKEN'),
+    'token + enabled publish policy is all electron-builder needs to create its own release');
+  report('the release job runs exactly one upload',
+    (releaseSteps.match(/gh release upload/g) || []).length === 1);
+  const pkgForWorkflow = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const distScripts = ['dist', 'dist:win', 'dist:linux'].map((name) => String((pkgForWorkflow.scripts || {})[name] || ''));
+  report('every npm dist script disables publishing once',
+    distScripts.every((s) => (s.match(/--publish/g) || []).length === 1 && s.includes('--publish never')),
+    'exactly one --publish never per script, and no "-- --publish" appended on the command line');
 } catch (err) {
   failed += 1;
   console.log(`FAIL  workflow sanity checks: ${err.message.split('\n')[0]}`);
