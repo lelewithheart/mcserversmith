@@ -53,7 +53,18 @@ try {
   const jobs = wf.jobs || {};
   report('build job waits for verify', !!(jobs.build && jobs.build.needs));
   report('build matrix is serialised (max-parallel)', !!(jobs.build && jobs.build.strategy && jobs.build.strategy['max-parallel'] === 1),
-    'two jobs publishing into one release at the same time race with a 422');
+    'one slow matrix job at a time keeps the free runner budget predictable');
+  const releaseJob = jobs.release || {};
+  const releaseSteps = (releaseJob.steps || []).map((step) => String((step && step.run) || '')).join('\n');
+  report('a release job attaches the binaries to the release',
+    !!(releaseJob.needs && /gh release upload/.test(releaseSteps)),
+    'without it CI only stores workflow artifacts and the GitHub release stays empty or Windows-only');
+  report('the release job only runs for tags', typeof releaseJob.if === 'string' && releaseJob.if.includes('refs/tags/'));
+  report('the release job refuses a run without every platform',
+    /compgen -G/.test(releaseSteps),
+    'a release missing .AppImage/.deb is exactly the bug this guards against');
+  report('the release job downloads both platforms into one folder',
+    /merge-multiple/.test(JSON.stringify(releaseJob.steps || [])));
   const matrixScripts = ((((jobs.build || {}).strategy || {}).matrix || {}).include || [])
     .map((entry) => String((entry && entry.script) || ''));
   report('build matrix disables implicit publishing', matrixScripts.length > 0 && matrixScripts.every((s) => s.includes('--publish never')),

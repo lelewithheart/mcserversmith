@@ -96,6 +96,7 @@ publish:
   provider: github
   owner: lelewithheart
   repo: mcserversmith
-  # the CI creates the release as a draft so you can review the notes and the
-  # attached files before it goes public; switch to "release" to publish directly
+  # electron-builder never publishes here: the CI build jobs run with
+  # --publish never and the workflow's `release` job is the only thing that
+  # creates/updates a release (one draft per tag, with both platforms in it).
   releaseType: draft
