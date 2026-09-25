@@ -91,5 +91,5 @@ deb:
 # The app performs no silent self-update in packaged form — see README.
 publish:
   provider: github
-  owner: leonhardyvon
+  owner: lelewithheart
   repo: mcserversmith

@@ -47,4 +47,4 @@ First complete build. Everything below was verified against real servers, not ju
 - Windows SmartScreen warns on unsigned builds
 - The Linux build is configured and in CI, but only Windows was built locally
 
-[0.1.0]: https://github.com/leonhardyvon/mcserversmith/releases/tag/v0.1.0
+[0.1.0]: https://github.com/lelewithheart/mcserversmith/releases/tag/v0.1.0
