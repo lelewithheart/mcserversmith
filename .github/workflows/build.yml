@@ -6,9 +6,7 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# Required so electron-builder may create the release and attach the installers.
-# Without this the build succeeds and then fails with
-# "HttpError: 403 Forbidden ... Resource not accessible by integration".
+# Required for the checksum upload step on tag builds.
 permissions:
   contents: write
 
@@ -33,15 +31,14 @@ jobs:
     needs: verify
     strategy:
       fail-fast: false
-      # one OS at a time: both jobs publish into the same release, and creating
-      # it twice at the same moment races (422 already_exists)
+      # Keep matrix jobs serial to avoid concurrent writes to release artifacts.
       max-parallel: 1
       matrix:
         include:
           - os: windows-latest
-            script: npm run dist:win
+            script: npm run dist:win -- --publish never
           - os: ubuntu-latest
-            script: npm run dist:linux
+            script: npm run dist:linux -- --publish never
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -53,9 +50,8 @@ jobs:
       - name: Generate icon
         run: node tools/make-icon.js
       - name: Build installers
-        # On a tag push electron-builder publishes implicitly (v27 will require
-        # --publish explicitly); on a manual run there is no tag, so it only
-        # builds and the artifacts below are the deliverable.
+        # Build artifacts only. Publishing is handled separately so CI does not
+        # fail when release creation is unavailable to this token.
         run: ${{ matrix.script }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
