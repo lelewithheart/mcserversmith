@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+out/
+
+# runtime data produced by the test harnesses
+.devdata*/
+dist-test/
+data/
+*.log
+
+# NEVER commit signing keys — tools/keygen.js writes these
+keys/
+!keys/.gitkeep
+
+# editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -1,0 +1,56 @@
+{
+  "_comment": "Monetisation data for MCServerSmith. Edit freely — no code changes needed. A copy of this file in the app data folder overrides these values (handy for white-labelling).",
+  "currency": "EUR",
+  "supporter": {
+    "enabled": true,
+    "price": "25",
+    "checkoutUrl": null,
+    "_checkoutUrl_note": "Paste your Gumroad / Lemon Squeezy / Ko-fi / Stripe payment-link URL here once you have one. Until then the app shows an explanation dialog instead of a dead button.",
+    "email": null
+  },
+  "hosters": [
+    {
+      "id": "hetzner",
+      "name": "Hetzner Cloud",
+      "url": "https://www.hetzner.com/cloud",
+      "referralUrl": null,
+      "priceFrom": "€4.59/mo",
+      "spec": "CX22 · 2 vCPU · 4 GB RAM · 24/7",
+      "highlight": true,
+      "_note": "Cheapest real cloud box. Set referralUrl to your affiliate link to earn from these cards."
+    },
+    {
+      "id": "netcup",
+      "name": "netcup",
+      "url": "https://www.netcup.com/en/server/vps",
+      "referralUrl": null,
+      "priceFrom": "€3.99/mo",
+      "spec": "VPS 1000 G11 · 24/7"
+    },
+    {
+      "id": "bisecthosting",
+      "name": "BisectHosting",
+      "url": "https://www.bisecthosting.com/minecraft-server-hosting",
+      "referralUrl": null,
+      "priceFrom": "€2.99/mo",
+      "spec": "Managed Minecraft hosting"
+    },
+    {
+      "id": "zap",
+      "name": "ZAP-Hosting",
+      "url": "https://zap-hosting.com/en/minecraft-server-hosting/",
+      "referralUrl": null,
+      "priceFrom": "€3.00/mo",
+      "spec": "Managed Minecraft hosting"
+    }
+  ],
+  "upsells": {
+    "cloudAfterStarts": 3,
+    "tunnelAfterDays": 2,
+    "nudgeCooldownHours": 48
+  },
+  "docs": {
+    "affiliateNote": "Set referralUrl on any hoster entry to turn these cards into affiliate revenue.",
+    "licenseNote": "Sell keys with tools/keygen.js and any hosted checkout — no website needed."
+  }
+}

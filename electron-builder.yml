@@ -1,0 +1,89 @@
+appId: com.mcserversmith.app
+productName: MCServerSmith
+copyright: MIT licensed
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - src/**/*
+  - resources/icon.png
+  - resources/monetization.json
+  - package.json
+  - "!**/*.md"
+  - "!**/*.map"
+  - "!tools/**"
+  - "!keys/**"
+
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - "**/*"
+
+asar: true
+compression: normal
+# Building for a different architecture/OS than the one you run on needs Docker
+# (or a native runner) — the GitHub workflow below does both OSes for you.
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.png
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MCServerSmith
+  # Unsigned builds show a SmartScreen warning on first run. A code-signing
+  # certificate is the only real fix; set it via CSC_LINK/CSC_KEY_PASSWORD in CI.
+  deleteAppDataOnUninstall: false
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+  category: Utility
+  synopsis: Minecraft server launcher
+  description: >
+    Pick a version, pick a flavour, hit start. MCServerSmith downloads the
+    server files and the exact Java runtime, then gives you a live dashboard,
+    backups, a plugin browser and a tunnel so nobody has to port-forward.
+  desktop:
+    entry:
+      Name: MCServerSmith
+      Comment: Run and manage Minecraft servers
+      Categories: Game;Utility;
+      StartupWMClass: MCServerSmith
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+
+# Auto-update feed. Point this at wherever you publish the build output
+# (GitHub Releases via the "github" provider works too — see README).
+publish:
+  provider: generic
+  url: https://example.com/mcserversmith/updates

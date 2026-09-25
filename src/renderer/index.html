@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'none'" />
+<title>MCServerSmith</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">⛏</div>
+        <div class="brand-text">
+          <strong>MCServerSmith</strong>
+          <span id="brand-version" class="muted"></span>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block" data-action="new-server" id="btn-new-server">
+        <span class="plus">+</span> <span data-i18n="nav.newServer">New server</span>
+      </button>
+
+      <nav class="instance-list" id="instance-list"></nav>
+
+      <div class="sidebar-footer">
+        <button class="nav-item" data-action="goto" data-view="settings">
+          <span class="ico">⚙</span> <span data-i18n="nav.settings">Settings</span>
+        </button>
+        <button class="nav-item" data-action="goto" data-view="runtimes">
+          <span class="ico">☕</span> <span data-i18n="nav.runtimes">Java runtimes</span>
+        </button>
+        <button class="nav-item" data-action="goto" data-view="cloud">
+          <span class="ico">☁</span> <span data-i18n="nav.cloud">24/7 hosting</span>
+        </button>
+        <button class="nav-item" data-action="goto" data-view="license">
+          <span class="ico">★</span> <span data-i18n="nav.license">Supporter</span>
+          <span class="badge" id="license-badge">free</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="view-title">MCServerSmith</h1>
+          <div id="view-subtitle" class="muted"></div>
+        </div>
+        <div class="topbar-right">
+          <div id="upsell-slot"></div>
+          <select id="language-select" class="select select-sm" title="Language"></select>
+          <button class="btn btn-ghost btn-sm" data-action="open-diagnostics" data-i18n-title="settings.diagnostics">🛠</button>
+        </div>
+      </header>
+
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

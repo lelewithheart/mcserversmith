@@ -1,0 +1,37 @@
+{
+  "name": "mcserversmith",
+  "productName": "MCServerSmith",
+  "version": "0.1.0",
+  "description": "Cross-platform Minecraft server launcher: pick a version, pick a flavour, hit start. Auto-downloads the server jar and the right Java runtime, gives you a live dashboard, backups and a tunnel so nobody has to port-forward.",
+  "main": "src/main/index.js",
+  "author": {
+    "name": "MCServerSmith",
+    "email": "support@example.com"
+  },
+  "license": "MIT",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/mcserversmith.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test:headless": "node tools/headless-test.js",
+    "test:providers": "node tools/test-providers.js",
+    "test:license": "node tools/test-license.js",
+    "test:backup": "node tools/test-backup.js",
+    "test:ui": "node tools/run-ui-test.js",
+    "check:i18n": "node tools/check-i18n.js",
+    "icon": "node tools/make-icon.js",
+    "keygen": "node tools/keygen.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {}
+}
