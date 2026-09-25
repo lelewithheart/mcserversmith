@@ -3,6 +3,34 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.2.5] — 2026-09-25
+
+Releases are automatic from here on: one tag push builds both platforms, fills the release
+and publishes it, and the notes below are generated from this file.
+
+### Added
+- **A tag push is all a release needs.** The `release` job uploads the Windows and Linux
+  artifacts first and only then publishes the release (`gh release edit --draft=false --latest`),
+  so the release is never visible without its files and nobody has to click "Publish".
+- **Release notes come from this changelog** (`tools/release-notes.js`, locally `npm run notes`):
+  the matching section plus a download table with the correct file names per platform. A tag build
+  warns loudly when the section for the version is missing, so notes and binaries cannot drift.
+- `tools/check-yaml.js` asserts the whole release path: release job present, publishes itself,
+  no appended `--publish` flag, no token in the build jobs, exactly one upload, platform guard,
+  notes generator wired up.
+
+### Changed
+- `.hermes/plans/BUILD-STATUS.md` is no longer tracked in the repository (the local file stays,
+  and `.hermes/` is ignored now).
+- README: fixed ASCII box alignment in the UI sketch.
+
+### Notes
+- Cumulative release: it also contains 0.2.4 (Minecraft 26.x → Java 25) and 0.2.3 (one release per
+  tag with both platforms).
+- How to release: bump `package.json`, add a section here, commit, then
+  `git tag vX.Y.Z && git push --tags`. The `verify` job aborts when the tag and
+  `package.json` disagree.
+
 ## [0.2.4] — 2026-09-25
 
 ### Fixed
