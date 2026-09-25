@@ -254,6 +254,19 @@ class ServerManager extends EventEmitter {
     fs.writeFileSync(p.eula, '#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://aka.ms/MinecraftEULA).\neula=true\n');
 
     const java = require('../java/runtime');
+    const launchJar = meta.launch && meta.launch.mode === 'jar' && meta.launch.jar
+      ? path.join(p.server, meta.launch.jar)
+      : null;
+    const required = java.requiredJava({
+      jarPath: launchJar,
+      mcVersion: meta.mcVersion,
+      providerMin: meta.javaFeature || 0
+    });
+    if (required.feature > (meta.javaFeature || 0)) {
+      const upgraded = await java.ensure(required.feature, { kind: meta.javaKind || 'jre' });
+      meta.javaFeature = upgraded.feature;
+      instances.update(id, { javaFeature: upgraded.feature });
+    }
     const javaPath = java.javaBinary(meta.javaFeature, meta.javaKind || 'jre');
     if (!javaPath) throw new Error(`Java ${meta.javaFeature} is missing — reinstall this server`);
 

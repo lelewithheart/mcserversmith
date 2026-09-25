@@ -3,6 +3,21 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.2.4] — 2026-09-25
+
+### Fixed
+- **Minecraft 26.x needs Java 25, not 21.** Mojang's year.release scheme (`26.1`, `26.3`, …) was
+  mapped to Java 21, so a 26.x server was started on the wrong JVM and crashed. The version rule now
+  returns 25 for `major >= 26`. Verified: 26.1 and 26.3 resolve to Java 25, and every older mapping
+  is unchanged (1.8.9/1.12.2/1.16.5 → 8, 1.17.1/1.19.4/1.20.4 → 17, 1.20.6/1.21.4 → 21).
+- **The Java requirement is re-checked on every start, not only once at install time.** Starting an
+  instance now combines the bytecode scan of the real launch jar with the version rules again and, if
+  the result is higher than the instance's recorded `javaFeature`, provisions that runtime from
+  Adoptium and stores the new feature on the instance. A server installed before the 26.x rule
+  existed therefore repairs itself on the next start instead of crashing.
+- `tools/test-providers.js` prints the heuristic for `26.1` as well, so a regression in that mapping
+  is visible in its output on every CI run.
+
 ## [0.2.3] — 2026-09-25
 
 Release pipeline only, no product changes — but this is the release users download.

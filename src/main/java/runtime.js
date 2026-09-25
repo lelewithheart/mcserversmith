@@ -124,7 +124,7 @@ function ruleBasedFeature(mcVersion) {
   const minor = parts[1] || 0;
   const patch = parts[2] || 0;
   // Mojang switched to a year.release scheme (26.1, 26.3, ...) in 2026.
-  if (major >= 26) return 21;
+  if (major >= 26) return 25;
   if (major === 1) {
     if (minor <= 16) return 8;
     if (minor === 17) return 17;

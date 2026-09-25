@@ -79,7 +79,7 @@ async function main() {
   }
 
   console.log('\n=== Java requirement heuristic ===');
-  for (const mc of ['1.8.9', '1.12.2', '1.16.5', '1.17.1', '1.19.4', '1.20.4', '1.20.6', '1.21.4', '26.3']) {
+  for (const mc of ['1.8.9', '1.12.2', '1.16.5', '1.17.1', '1.19.4', '1.20.4', '1.20.6', '1.21.4', '26.1', '26.3']) {
     const { feature, source } = javaruntime.requiredJava({ mcVersion: mc });
     console.log(`  ${mc.padEnd(8)} -> Java ${String(feature).padStart(2)}   (${source})`);
   }
