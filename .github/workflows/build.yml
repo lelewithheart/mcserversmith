@@ -34,6 +34,17 @@ jobs:
             exit 1
           fi
           echo "tag and package.json agree: $GITHUB_REF_NAME"
+      - name: Changelog entry for this version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          # the release notes are cut from CHANGELOG.md, so a missing section means a
+          # release body that says nothing. Warn loudly, but do not block the release.
+          if grep -q "^## \[${GITHUB_REF_NAME#v}\]" CHANGELOG.md; then
+            echo "CHANGELOG.md has a section for ${GITHUB_REF_NAME#v}"
+          else
+            echo "::warning::CHANGELOG.md has no section for ${GITHUB_REF_NAME#v} — the release notes will be a placeholder"
+          fi
       - name: i18n coverage
         run: node tools/check-i18n.js
       - name: Config sanity
@@ -98,11 +109,13 @@ jobs:
 
   release:
     needs: build
-    # Draft releases only make sense for a tag; a manual dispatch just builds.
+    # Releases are only ever made from a tag; a manual dispatch just builds.
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # the release notes are generated from CHANGELOG.md, so the repo is needed here
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -119,18 +132,23 @@ jobs:
             fi
           done
           exit $missing
-      - name: Create or update the draft release
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          node tools/release-notes.js "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+      - name: Create, fill and publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # The only place that touches a release: exactly one release per tag, one
-          # upload with both platforms in it, so nobody has to hunt for the Linux
-          # files in a second draft.
+          # upload with both platforms in it, and it goes public without anyone
+          # having to click anything.
           count=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq "[.[] | select(.tagName == \"$GITHUB_REF_NAME\")] | length")
           if [ "$count" -eq 0 ]; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --draft --title "MCServerSmith ${GITHUB_REF_NAME#v}" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "MCServerSmith ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md
           elif [ "$count" -gt 1 ]; then
             # Duplicates of the same tag can only come from an old run that published
             # implicitly. Stop instead of guessing which one to upload into.
@@ -138,7 +156,10 @@ jobs:
             gh release list --repo "$GITHUB_REPOSITORY" --json tagName,name,isDraft --jq '.[]'
             exit 1
           fi
+          # upload first, publish second: the release is never publicly visible
+          # without its artifacts
           gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
       - name: Release contents
         shell: bash
         env:

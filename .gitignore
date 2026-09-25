@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 out/
+.hermes/
 
 # runtime data produced by the test harnesses
 .devdata*/

@@ -75,6 +75,15 @@ try {
     'token + enabled publish policy is all electron-builder needs to create its own release');
   report('the release job runs exactly one upload',
     (releaseSteps.match(/gh release upload/g) || []).length === 1);
+  report('the release job publishes the release itself',
+    /--draft=false/.test(releaseSteps) && /--draft\b/.test(releaseSteps),
+    'without it every release stays a draft until someone clicks Publish; create as draft, upload, then edit --draft=false');
+  report('release notes are generated from CHANGELOG.md',
+    /release-notes\.js/.test(releaseSteps) && fs.existsSync(path.join(root, 'tools/release-notes.js')),
+    'tools/release-notes.js must exist and be used with --notes-file');
+  report('tag builds check for a changelog entry',
+    JSON.stringify((jobs.verify || {}).steps || []).includes('CHANGELOG.md'),
+    'a tag build without a CHANGELOG section ships empty release notes');
   const pkgForWorkflow = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const distScripts = ['dist', 'dist:win', 'dist:linux'].map((name) => String((pkgForWorkflow.scripts || {})[name] || ''));
   report('every npm dist script disables publishing once',

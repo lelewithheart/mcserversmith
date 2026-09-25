@@ -18,14 +18,14 @@ a plugin/mod browser and an optional tunnel so nobody has to configure port forw
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  ⛏ MCServerSmith                                    46.124.150.5:25565  │
 ├────────────────┬─────────────────────────────────────────────────────────┤
-│  + New server  │  Overview  Console  Players  Plugins  Backups  Network   │
+│  + New server  │  Overview  Console  Players  Plugins  Backups  Network  │
 │                │                                                         │
 │  ● Kumpel      │  Status    Players   Uptime      Join address           │
 │    2/20        │  online    2/20      3h 14m      kumpel.play.example    │
 │  ○ Creative    │                                                         │
 │                │  RAM  ▓▓▓▓▓▓▓░░░  2.1 GB / 4 GB                         │
 │  ⚙ Settings    │  CPU  ▓▓▓░░░░░░░  23.4 %                                │
-│  ☕ Runtimes    │  TPS  ▓▓▓▓▓▓▓▓▓▓  20.0, 20.0, 19.9                     │
+│  ☕ Runtimes   │  TPS  ▓▓▓▓▓▓▓▓▓▓  20.0, 20.0, 19.9                      │
 │  ☁ 24/7 hosting│                                                         │
 │  ★ Supporter   │  [Start] [Restart] [Stop] [Force stop]                  │
 └────────────────┴─────────────────────────────────────────────────────────┘

@@ -25,6 +25,7 @@
     "test:ui": "node tools/run-ui-test.js",
     "check:i18n": "node tools/check-i18n.js",
     "check:yaml": "node tools/check-yaml.js",
+    "notes": "node tools/release-notes.js",
     "icon": "node tools/make-icon.js",
     "keygen": "node tools/keygen.js",
     "dist": "electron-builder --publish never",
