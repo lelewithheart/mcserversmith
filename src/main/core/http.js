@@ -14,7 +14,7 @@ const pkg = require('../../../package.json');
 
 const log = createLogger('http');
 
-const USER_AGENT = `MCServerSmith/${pkg.version} (+https://github.com/example/mcserversmith)`;
+const USER_AGENT = `MCServerSmith/${pkg.version} (contact: leonhardyvon@gmx.net)`;
 
 function requestOnce(url, { method = 'GET', headers = {}, timeout = 60000, agent } = {}) {
   return new Promise((resolve, reject) => {

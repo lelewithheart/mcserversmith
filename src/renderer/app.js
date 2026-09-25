@@ -662,6 +662,8 @@ function viewSettings() {
       <label class="check"><input type="checkbox" data-setting="showUpsellCards" ${s.showUpsellCards ? 'checked' : ''} /><span>${esc(t('settings.showUpsell'))}</span></label>
       <label class="check"><input type="checkbox" data-setting="showSupporterNudge" ${s.showSupporterNudge ? 'checked' : ''} /><span>${esc(t('settings.showNudge'))}</span></label>
       <label class="check"><input type="checkbox" data-setting="autoUpdate" ${s.autoUpdate ? 'checked' : ''} /><span>${esc(t('settings.autoUpdate'))}</span></label>
+      <label class="check"><input type="checkbox" data-setting="showPublicIp" ${s.showPublicIp ? 'checked' : ''} /><span>${esc(t('settings.showPublicIp'))}</span></label>
+      <p class="muted small" style="margin-top:10px">${esc(t('settings.privacyNote'))}</p>
     </div>
     <div class="card">
       <h3>${esc(t('settings.newDefaults'))}</h3>
@@ -698,7 +700,11 @@ function viewSettings() {
         <tr><td>Node</td><td>${esc(state.appInfo.node || '')}</td></tr>
         <tr><td>${esc(t('settings.platform'))}</td><td>${esc(`${state.appInfo.platform}/${state.appInfo.arch}`)}</td></tr>
         <tr><td>git / tar</td><td>${state.appInfo.capabilities ? `${state.appInfo.capabilities.git ? '✓' : '✗'} / ${state.appInfo.capabilities.tar ? '✓' : '✗'}` : ''}</td></tr>
+        <tr><td>${esc(t('settings.madeBy'))}</td><td>Leonhard Yvon</td></tr>
+        <tr><td>${esc(t('settings.contact'))}</td><td><a href="#" data-action="open-external" data-url="mailto:leonhardyvon@gmx.net">leonhardyvon@gmx.net</a></td></tr>
+        <tr><td>${esc(t('settings.license'))}</td><td>MIT © 2026 Leonhard Yvon</td></tr>
       </table>
+      <p class="muted small" style="margin-top:12px;font-weight:600">${esc(t('settings.disclaimer'))}</p>
       <div class="row" style="margin-top:12px">
         <button class="btn btn-sm" data-action="open-diagnostics">${esc(t('settings.diagnostics'))}</button>
         <button class="btn btn-sm" data-action="open-app-log">${esc(t('settings.openAppLog'))}</button>

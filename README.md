@@ -8,6 +8,12 @@ software *and* the exact Java runtime it needs, starts the server and gives you 
 dashboard: players online, join address, console, TPS, RAM/CPU, world size, backups,
 a plugin/mod browser and an optional tunnel so nobody has to configure port forwarding.
 
+> **NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.**
+>
+> MCServerSmith ships no Minecraft code and no Minecraft assets. Server software, Java runtimes,
+> plugins and mods are downloaded from their official sources at the user's request.
+> Contact: leonhardyvon@gmx.net · MIT licence, © 2026 Leonhard Yvon
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  ⛏ MCServerSmith                                    46.124.150.5:25565  │

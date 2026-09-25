@@ -85,7 +85,12 @@ function register({ ipcMain, manager, shell, dialog, app, getWindow }) {
     node: process.versions.node,
     dataRoot: getDirs().root,
     tools: { git: which('git'), tar: which('tar'), unzip: which('unzip') },
-    licenses: license.status()
+    licenses: license.status(),
+    // required by the Minecraft Usage Guidelines on any related material,
+    // and useful in bug reports
+    disclaimer: 'NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.',
+    contact: 'leonhardyvon@gmx.net',
+    copyright: 'MIT © 2026 Leonhard Yvon'
   })));
 
   // ----------------------------------------------------------- providers ---

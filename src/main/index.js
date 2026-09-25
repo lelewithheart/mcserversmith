@@ -223,7 +223,7 @@ function buildMenu() {
       submenu: [
         {
           label: 'Documentation',
-          click: () => shell.openExternal('https://github.com/example/mcserversmith#readme')
+          click: () => shell.openExternal('https://github.com/leonhardyvon/mcserversmith#readme')
         },
         {
           label: `Version ${require('../../package.json').version}`,

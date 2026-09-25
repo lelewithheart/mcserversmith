@@ -1,16 +1,20 @@
 appId: com.mcserversmith.app
 productName: MCServerSmith
-copyright: MIT licensed
+copyright: © 2026 Leonhard Yvon
 
 directories:
   output: dist
   buildResources: resources
 
 files:
-  - src/**/*
+  - src/**/*.js
+  - src/renderer/index.html
+  - src/renderer/styles.css
+  - src/renderer/locales/*.json
   - resources/icon.png
   - resources/monetization.json
   - package.json
+  - LICENSE
   - "!**/*.md"
   - "!**/*.map"
   - "!tools/**"
@@ -82,8 +86,10 @@ deb:
     - libuuid1
     - libsecret-1-0
 
-# Auto-update feed. Point this at wherever you publish the build output
-# (GitHub Releases via the "github" provider works too — see README).
+# Auto-update feed. Recommended: GitHub Releases via the "github" provider
+# (electron-builder then uses "owner"/"repo" and needs no URL).
+# The app performs no silent self-update in packaged form — see README.
 publish:
-  provider: generic
-  url: https://example.com/mcserversmith/updates
+  provider: github
+  owner: leonhardyvon
+  repo: mcserversmith

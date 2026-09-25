@@ -155,6 +155,19 @@ function script() {
       if (cb1) { cb1.click(); await sleep(600); }   // put it back
     }
 
+    ok('disclaimer shown in settings', document.body.textContent.includes('NOT AN OFFICIAL MINECRAFT PRODUCT'));
+    const ipBox = $('#content input[data-setting="showPublicIp"]');
+    ok('public-ip privacy toggle present', !!ipBox);
+    if (ipBox) {
+      const before = ipBox.checked;
+      ipBox.click();
+      await sleep(700);
+      const after = (await window.mcss.app.getSettings()).data.showPublicIp;
+      ok('public-ip toggle persists', after === !before, String(before) + ' -> ' + String(after));
+      const back = $('#content input[data-setting="showPublicIp"]');
+      if (back) { back.click(); await sleep(500); }
+    }
+
     const langSel = $('#setting-language');
     ok('settings language dropdown present', !!langSel);
     if (langSel) {

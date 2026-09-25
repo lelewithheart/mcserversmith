@@ -106,6 +106,9 @@ class ServerManager extends EventEmitter {
   }
 
   async _fetchPublicIp() {
+    // Privacy: this talks to a third-party service (api.ipify.org). It can be
+    // switched off — then the dashboard only shows the local/LAN address.
+    if (settings.all().showPublicIp === false) return null;
     if (this.publicIp && Date.now() - this.publicIpAt < POLL_NET_MS) return this.publicIp;
     try {
       const { fetchText } = require('../core/http');

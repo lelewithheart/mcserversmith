@@ -46,6 +46,14 @@ jobs:
           # Optional code signing (Windows SmartScreen, macOS notarisation):
           # CSC_LINK: ${{ secrets.CSC_LINK }}
           # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          for f in *.exe *.AppImage *.deb *.tar.gz; do
+            [ -f "$f" ] && sha256sum "$f" > "$f.sha256" || true
+          done
+          ls -la
       - uses: actions/upload-artifact@v4
         with:
           name: MCServerSmith-${{ matrix.os }}

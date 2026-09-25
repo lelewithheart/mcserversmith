@@ -19,6 +19,7 @@ const DEFAULTS = {
   eulaAcceptedAt: null,
   showUpsellCards: true,
   showSupporterNudge: true,
+  showPublicIp: true,
   autoPortForward: true,
   telemetry: false,
   lastInstanceId: null,
