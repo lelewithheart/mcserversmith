@@ -13,6 +13,9 @@ data/
 keys/
 !keys/.gitkeep
 
+# private notes: distribution/monetisation planning, must stay off GitHub
+private/
+
 # editor / OS noise
 .vscode/
 .idea/
