@@ -10,6 +10,7 @@
   },
   "license": "MIT",
   "private": false,
+  "desktopName": "mcserversmith.desktop",
   "repository": {
     "type": "git",
     "url": "https://github.com/lelewithheart/mcserversmith.git"
@@ -23,6 +24,7 @@
     "test:backup": "node tools/test-backup.js",
     "test:ui": "node tools/run-ui-test.js",
     "check:i18n": "node tools/check-i18n.js",
+    "check:yaml": "node tools/check-yaml.js",
     "icon": "node tools/make-icon.js",
     "keygen": "node tools/keygen.js",
     "dist": "electron-builder",

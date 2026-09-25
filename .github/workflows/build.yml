@@ -6,9 +6,16 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Required so electron-builder may create the release and attach the installers.
+# Without this the build succeeds and then fails with
+# "HttpError: 403 Forbidden ... Resource not accessible by integration".
+permissions:
+  contents: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,6 +24,8 @@ jobs:
       - run: npm ci || npm install
       - name: i18n coverage
         run: node tools/check-i18n.js
+      - name: Config sanity
+        run: node tools/check-yaml.js
       - name: Provider APIs (live)
         run: node tools/test-providers.js
 
@@ -24,6 +33,9 @@ jobs:
     needs: verify
     strategy:
       fail-fast: false
+      # one OS at a time: both jobs publish into the same release, and creating
+      # it twice at the same moment races (422 already_exists)
+      max-parallel: 1
       matrix:
         include:
           - os: windows-latest
@@ -31,6 +43,7 @@ jobs:
           - os: ubuntu-latest
             script: npm run dist:linux
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,6 +53,9 @@ jobs:
       - name: Generate icon
         run: node tools/make-icon.js
       - name: Build installers
+        # On a tag push electron-builder publishes implicitly (v27 will require
+        # --publish explicitly); on a manual run there is no tag, so it only
+        # builds and the artifacts below are the deliverable.
         run: ${{ matrix.script }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,6 +70,17 @@ jobs:
             [ -f "$f" ] && sha256sum "$f" > "$f.sha256" || true
           done
           ls -la
+      - name: Attach checksums to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # electron-builder already created the release (as a draft) and uploaded
+          # the binaries; the .sha256 files are generated after it, so they are
+          # uploaded here — they are the only integrity proof while unsigned.
+          gh release upload "${GITHUB_REF_NAME}" dist/*.sha256 --clobber || \
+            echo "no release for ${GITHUB_REF_NAME} yet — skipping checksum upload"
       - uses: actions/upload-artifact@v4
         with:
           name: MCServerSmith-${{ matrix.os }}
@@ -61,5 +88,6 @@ jobs:
             dist/*.exe
             dist/*.AppImage
             dist/*.deb
+            dist/*.sha256
           if-no-files-found: warn
           retention-days: 14

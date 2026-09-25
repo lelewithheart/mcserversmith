@@ -61,6 +61,9 @@ linux:
       arch:
         - x64
   category: Utility
+  # makes the running window associate with the .desktop entry (WM_CLASS),
+  # otherwise Linux desktops show a second, unnamed launcher icon
+  syncDesktopName: true
   synopsis: Minecraft server launcher
   description: >
     Pick a version, pick a flavour, hit start. MCServerSmith downloads the
@@ -93,3 +96,6 @@ publish:
   provider: github
   owner: lelewithheart
   repo: mcserversmith
+  # the CI creates the release as a draft so you can review the notes and the
+  # attached files before it goes public; switch to "release" to publish directly
+  releaseType: draft
