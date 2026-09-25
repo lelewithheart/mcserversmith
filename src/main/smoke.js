@@ -14,6 +14,12 @@ const path = require('path');
 
 const log = createLogger('smoke');
 
+/** Where the app keeps its log — the smoke report and screenshots land next to it. */
+function logsDir() {
+  const { getDirs } = require('./core/paths');
+  return path.dirname(getDirs().appLog);
+}
+
 const READY_DELAY_MS = Number(process.env.MCSERVERSMITH_SMOKE_DELAY || 5000);
 
 function script() {
@@ -273,54 +279,75 @@ function script() {
     if (instId) {
       state.instances = (await window.mcss.instances.list()).data || [];
       state.activeId = instId;
-      state.settings.filesAdvanced = false;
       state.view = 'server';
       state.tab = 'files';
-      await refreshFiles();
-      await sleep(600);   // rerender() is coalesced through setTimeout
 
-      const simpleRows = document.querySelectorAll('#content table tbody tr');
-      ok('files: simple view lists entries', simpleRows.length > 0, simpleRows.length + ' rows');
-      const simpleText = $('#content').textContent;
-      ok('files: simple view shows server.properties', simpleText.includes('server.properties'));
-      ok('files: simple view explains itself', !!$('#content .muted') && /Einfach|Simple|touch|anfasst/i.test(simpleText));
+      // the folders a server owner actually has, so quick access has something to show
+      await window.mcss.files.mkdir(instId, '', 'world');
+      await window.mcss.files.mkdir(instId, '', 'plugins');
+      await window.mcss.files.mkdir(instId, '', 'smoke-dir');
+      await window.mcss.files.mkdir(instId, 'smoke-dir', 'nested');
+      await refreshFiles('');
+      await sleep(800);   // rerender() is coalesced through setTimeout
 
-      // switch to the advanced view through the real button
-      const advBtn = document.querySelector('[data-action="files-mode"][data-mode="advanced"]');
-      ok('files: view switch present', !!advBtn);
-      if (advBtn) { advBtn.click(); await sleep(900); }
-      ok('files: advanced mode is persisted', (await window.mcss.app.getSettings()).data.filesAdvanced === true);
-      const advText = $('#content').textContent;
-      ok('files: advanced view lists the folder', advText.includes('server.properties'), advText.length + ' chars');
+      // ---- layout: quick access + a real listing ---------------------------
+      ok('files: quick access sidebar present', !!$('.files-side'), document.querySelectorAll('.files-side-item').length + ' items');
+      ok('files: listing shows the folder contents', document.querySelectorAll('tr.file-row').length > 0,
+        document.querySelectorAll('tr.file-row').length + ' rows');
+      ok('files: the simple/advanced toggle is gone', !document.querySelector('[data-action="files-mode"]'));
+      ok('files: crumb bar starts at the server folder', !!$('.files-path .crumb.current'));
+
+      // ---- single click selects, double click enters -----------------------
+      const dirRow = [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === 'smoke-dir');
+      ok('files: a folder row is listed', !!dirRow && dirRow.dataset.dir === '1');
+      if (dirRow) { dirRow.click(); await sleep(250); }
+      const selRow = document.querySelector('tr.file-row.selected');
+      ok('files: single click selects the row', !!selRow && selRow.dataset.name === 'smoke-dir', selRow ? selRow.dataset.name : 'none');
+      ok('files: single click does not navigate', state.files[instId].path === '', String(state.files[instId].path));
+      ok('files: the status line reports the selection', /smoke-dir/.test(($('#files-status') || {}).textContent || ''),
+        ($('#files-status') || {}).textContent);
+
+      // this is the bug that made folders unusable: the click did nothing at all
+      // (re-query the row: a background repaint may have replaced the node)
+      const dirRow2 = [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === 'smoke-dir');
+      if (dirRow2) {
+        dirRow2.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await sleep(1000);
+      }
+      ok('files: double click enters the folder', state.files[instId].path === 'smoke-dir', String(state.files[instId].path));
+      ok('files: the nested folder is listed', !!document.querySelector('tr.file-row[data-name="nested"]'));
+      ok('files: the crumb bar follows the path', /smoke-dir/.test(($('.files-path') || {}).textContent || ''),
+        ($('.files-path') || {}).textContent);
+
+      const backBtn = document.querySelector('[data-action="files-back"]');
+      ok('files: back is enabled after navigating', !!backBtn && backBtn.disabled === false);
+      if (backBtn) { backBtn.click(); await sleep(1000); }
+      ok('files: back returns to the server folder', state.files[instId].path === '', String(state.files[instId].path));
+
+      // ---- quick access ------------------------------------------------
+      const pluginsItem = [...document.querySelectorAll('.files-side-item')].find((b) => b.dataset.rel === 'plugins');
+      ok('files: quick access lists the plugins folder', !!pluginsItem);
+      if (pluginsItem) { pluginsItem.click(); await sleep(1000); }
+      ok('files: quick access navigates into the folder', state.files[instId].path === 'plugins', String(state.files[instId].path));
+      const upBtn = document.querySelector('[data-action="files-up"]');
+      ok('files: up button present inside a folder', !!upBtn && upBtn.disabled === false);
+      if (upBtn) { upBtn.click(); await sleep(1000); }
+      ok('files: up returns to the server folder', state.files[instId].path === '', String(state.files[instId].path));
 
       // navigate + create + delete through the IPC the UI uses
       const inside = await window.mcss.files.list(instId, '');
       ok('files: list IPC returns entries', Array.isArray(inside.data.entries) && inside.data.entries.length > 0,
         inside.data && inside.data.entries ? inside.data.entries.length + ' entries' : 'none');
-      await window.mcss.files.mkdir(instId, '', 'smoke-dir');
-      const afterMkdir = await window.mcss.files.list(instId, '');
-      ok('files: folder created', afterMkdir.data.entries.some((e) => e.name === 'smoke-dir' && e.dir));
       const inSmoke = await window.mcss.files.list(instId, 'smoke-dir');
       ok('files: can enter the new folder', inSmoke.data.path === 'smoke-dir', inSmoke.data.path);
       ok('files: traversal is refused', !(await window.mcss.files.list(instId, '../../..')).ok);
-      ok('files: can delete the folder', (await window.mcss.files.remove(instId, 'smoke-dir')).ok);
-      const afterDelete = await window.mcss.files.list(instId, '');
-      ok('files: folder is gone', !afterDelete.data.entries.some((e) => e.name === 'smoke-dir'));
+      ok('files: can delete a folder', (await window.mcss.files.remove(instId, 'smoke-dir')).ok);
 
-      // back to simple, then clean up the test instance
-      const simpleBtn = document.querySelector('[data-action="files-mode"][data-mode="simple"]');
-      if (simpleBtn) { simpleBtn.click(); await sleep(900); }
-      ok('files: back to simple mode', (await window.mcss.app.getSettings()).data.filesAdvanced === false);
-
-      // a plugin server must offer "Plugins", not "Mods", and the world folder
-      // must appear as soon as it exists
-      await window.mcss.files.mkdir(instId, '', 'world');
-      await window.mcss.files.mkdir(instId, '', 'plugins');
-      await refreshFiles();
-      await sleep(700);
+      // the sidebar reflects what exists: a plugin server offers Plugins, never Mods
+      await refreshFiles('');
+      await sleep(800);
       const filled = $('#content').textContent;
-      const pluginRows = document.querySelectorAll('#content table tbody tr').length;
-      ok('files: plugin server shows a Plugins entry', filled.includes('Plugins'), pluginRows + ' rows');
+      ok('files: quick access shows a Plugins entry', filled.includes('Plugins'));
       ok('files: world appears once it exists', /Welt|World/.test(filled));
       ok('files: mods entry is not shown for a plugin server', !/Mod-Konfigurationen|Mod configs/.test(filled));
 
@@ -350,14 +377,8 @@ function script() {
         ok('dialog closes after submitting', !$('#dialog-input'));
       }
 
-      // the row menu lives in the advanced browser: the simple view deliberately
-      // lists only the entries a server owner actually touches, so a brand-new
-      // folder is not one of them
-      const advBtn2 = document.querySelector('[data-action="files-mode"][data-mode="advanced"]');
-      ok('advanced view switch available for the row menu', !!advBtn2);
-      if (advBtn2) { advBtn2.click(); await sleep(1200); }
       await refreshFiles('');
-      await sleep(700);
+      await sleep(800);
       const rowFor = (name) => [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === name);
       const mkRow = rowFor('ui-made');
       ok('the new folder has a row with a menu button', !!mkRow && !!mkRow.querySelector('[data-action="files-menu"]'));
@@ -406,7 +427,104 @@ function script() {
         }
       }
 
-      // ---- typing survives the 3 s status poll -----------------------------
+      // ---- keyboard navigation --------------------------------------------
+      await refreshFiles('');
+      await sleep(800);
+      state.filesSel = null;
+      selectFileRow(null);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      await sleep(250);
+      const kbSel = document.querySelector('tr.file-row.selected');
+      ok('files: arrow down selects a row', !!kbSel, kbSel ? kbSel.dataset.name : 'none');
+
+      // Delete inside a text field must never delete a file
+      const beforeGuard = (await window.mcss.files.list(instId, '')).data.entries.length;
+      const filterGuard = $('#files-filter');
+      if (filterGuard) {
+        filterGuard.focus();
+        filterGuard.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        await sleep(400);
+      }
+      const afterGuard = (await window.mcss.files.list(instId, '')).data.entries.length;
+      ok('files: Delete in the filter box deletes nothing', beforeGuard === afterGuard, beforeGuard + ' -> ' + afterGuard);
+      if (filterGuard) filterGuard.blur();
+      await sleep(200);
+
+      // ---- the in-app editor ----------------------------------------------
+      await window.mcss.files.write(instId, 'server.properties',
+        ['motd=A Minecraft Server', 'level-name=world', 'server-port=25577', ''].join(String.fromCharCode(10)), null);
+      await refreshFiles('');
+      await sleep(800);
+      const editRow = [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === 'server.properties');
+      ok('files: a text file row is present', !!editRow);
+      if (editRow) { editRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await sleep(1400); }
+      const ta = $('#editor-text');
+      ok('files: double click opens a text file in the editor', !!ta);
+      ok('files: the editor shows the file content', !!ta && /level-name/.test(ta.value), ta ? ta.value.slice(0, 50) : 'none');
+      if (ta) {
+        ta.value = ta.value + '# smoke-test-edit' + String.fromCharCode(10);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+        ok('files: unsaved changes are marked', /unsaved|ungespeichert/i.test((($('#editor-state') || {}).textContent) || ''),
+          ($('#editor-state') || {}).textContent);
+        const saveBtn = document.querySelector('[data-action="editor-save"]');
+        if (saveBtn) { saveBtn.click(); await sleep(1500); }
+        ok('files: saving closes the editor', !$('#editor-text'));
+        const onDisk = await window.mcss.files.read(instId, 'server.properties');
+        ok('files: the edit landed on disk', !!onDisk.ok && /smoke-test-edit/.test(onDisk.data.text));
+        const listing = await window.mcss.files.list(instId, '');
+        ok('files: a .bak copy of the previous version is kept',
+          !!listing.data && listing.data.entries.some((e) => e.name === 'server.properties.bak'));
+      }
+
+      // closing with unsaved changes has to ask first
+      const editRow2 = [...document.querySelectorAll('tr.file-row')].find((tr) => tr.dataset.name === 'server.properties');
+      if (editRow2) { editRow2.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await sleep(1400); }
+      const ta2 = $('#editor-text');
+      if (ta2) {
+        ta2.value = 'garbage-on-purpose';
+        ta2.dispatchEvent(new Event('input', { bubbles: true }));
+        const cancelBtn = document.querySelector('[data-action="editor-cancel"]');
+        if (cancelBtn) { cancelBtn.click(); await sleep(700); }
+        const keepBtn = document.querySelector('[data-dialog="cancel"]');
+        ok('files: closing with unsaved changes asks first', !!keepBtn);
+        if (keepBtn) { keepBtn.click(); await sleep(600); }
+        ok('files: cancelling the question keeps the editor open', !!$('#editor-text'));
+        const cancelBtn2 = document.querySelector('[data-action="editor-cancel"]');
+        if (cancelBtn2) { cancelBtn2.click(); await sleep(700); }
+        const discardBtn = document.querySelector('[data-dialog="ok"]');
+        ok('files: the question offers a discard button', !!discardBtn);
+        if (discardBtn) { discardBtn.click(); await sleep(900); }
+        ok('files: discarding closes the editor', !$('#editor-text'));
+        const after = await window.mcss.files.read(instId, 'server.properties');
+        ok('files: the discarded edit did not reach the disk', !!after.ok && !/garbage-on-purpose/.test(after.data.text));
+      }
+
+      // ---- drag & drop import ---------------------------------------------
+      // The preload resolves dropped paths; the hook sends the same IPC with a
+      // real path, so this exercises the whole chain. The source lives in a
+      // subfolder and the browser is at the root, exactly like a real drop.
+      await window.mcss.files.mkdir(instId, '', 'drop-src');
+      await window.mcss.files.write(instId, 'drop-src/import-me.txt', 'dropped content', null);
+      const seedPath = (await window.mcss.files.path(instId, 'drop-src/import-me.txt')).data;
+      await refreshFiles('');
+      await sleep(700);
+      ok('files: the drop hook is exposed', typeof window.mcss.files.__simulateDrop === 'function', typeof window.mcss.files.__simulateDrop);
+      // instrument the IPC round trip so a failure tells us which half broke
+      window.__droppedSeen = 0;
+      window.mcss.onFilesDropped((p) => { window.__droppedSeen = (p && p.paths ? p.paths.length : 0); });
+      window.mcss.files.__simulateDrop([seedPath]);
+      await sleep(1800);
+      const afterDrop = await window.mcss.files.list(instId, '');
+      const dropNames = afterDrop.data && afterDrop.data.entries ? afterDrop.data.entries.map((e) => e.name).join(',') : 'none';
+      ok('files: the drop reaches the renderer over IPC', window.__droppedSeen === 1, 'seen=' + window.__droppedSeen);
+      ok('files: a dropped file is imported into the folder on screen',
+        !!afterDrop.data && afterDrop.data.entries.some((e) => e.name === 'import-me.txt'),
+        'listing=' + dropNames + ' toasts=' + [...document.querySelectorAll('.toast')].map((t2) => t2.textContent).join('/'));
+
+      out.instanceId = instId;
+
+
       // Before: #content was rebuilt from innerHTML on every poll tick, which
       // replaced the focused field (text gone, caret gone) and detached any open
       // select popup.
@@ -450,6 +568,7 @@ function script() {
 
       // console: the command box used to grab the focus from the filter box on
       // every re-mount, and the log jumped back to the bottom
+      // the console filter keeps focus and text across a poll
       state.tab = 'console';
       rerender();
       await sleep(1000);
@@ -465,7 +584,13 @@ function script() {
           'focus: ' + (document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : 'none') + ' value: ' + conFilter.value);
       }
 
-      await window.mcss.instances.remove(instId, true);
+      // leave the window on the file browser so the screenshot taken by the
+      // harness shows what a user sees; the instance is removed afterwards
+      state.view = 'server';
+      state.tab = 'files';
+      state.filesSel = null;
+      await refreshFiles('');
+      await sleep(900);
     }
 
     ok('no uncaught renderer errors', out.consoleErrors.length === 0, out.consoleErrors.join(' | '));
@@ -505,6 +630,32 @@ async function run({ window, probe }) {
   }
 
   const failed = (report.checks || []).filter((c) => !c.ok);
+
+  // Screenshot what the renderer left on screen (MCSERVERSMITH_SMOKE_SHOT=1).
+  // Screenshots are how a layout change gets reviewed without a second human.
+  if (process.env.MCSERVERSMITH_SMOKE_SHOT) {
+    try {
+      // the smoke run keeps the window hidden, and a hidden window does not
+      // repaint — show it briefly or the screenshot shows a stale frame
+      window.showInactive();
+      await new Promise((r) => setTimeout(r, 1200));
+      const img = await window.webContents.capturePage();
+      const shot = path.join(logsDir(), 'ui-files.png');
+      fs.writeFileSync(shot, img.toPNG());
+      console.log(`screenshot: ${shot}`);
+      window.hide();
+    } catch (err) {
+      console.log(`screenshot failed: ${err.message}`);
+    }
+  }
+
+  // clean up the test instance the script created
+  if (report.instanceId) {
+    try {
+      await wc.executeJavaScript(`window.mcss.instances.remove(${JSON.stringify(report.instanceId)}, true)`, true);
+    } catch { /* the next run cleans up leftovers */ }
+  }
+
   const lines = ['=== UI smoke test ==='];
   for (const c of report.checks || []) {
     lines.push(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name}${c.detail ? ` — ${c.detail}` : ''}`);
@@ -515,8 +666,7 @@ async function run({ window, probe }) {
   // also write it next to the app log: app.exit() is abrupt and has swallowed
   // the whole report when stdout was a pipe
   try {
-    const { getDirs } = require('./core/paths');
-    fs.writeFileSync(path.join(getDirs().appLogDir || path.dirname(getDirs().appLog), 'ui-smoke.log'), `${text}\n`);
+    fs.writeFileSync(path.join(logsDir(), 'ui-smoke.log'), `${text}\n`);
   } catch { /* the console output is the fallback */ }
   log.info(`smoke test finished: ${(report.checks || []).length - failed.length}/${(report.checks || []).length}`);
   return failed.length ? 1 : 0;

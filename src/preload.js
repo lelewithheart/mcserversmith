@@ -1,8 +1,29 @@
 'use strict';
 /** Renderer bridge. contextIsolation is on — this is the only exposed surface. */
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const invoke = (channel, payload) => ipcRenderer.invoke(`mcss:${channel}`, payload);
+
+// ---------------------------------------------------------------- file drops
+// Electron 32 removed File.path, so the path of a dropped file can only be read
+// in the preload via webUtils. Catch the drop here, forward the paths to the
+// renderer, which knows the instance and folder that is on screen.
+const dropZoneOf = (target) => (target && target.closest ? target.closest('[data-drop-zone]') : null);
+window.addEventListener('dragover', (ev) => {
+  if (dropZoneOf(ev.target)) {
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+  }
+}, true);
+window.addEventListener('drop', (ev) => {
+  const zone = dropZoneOf(ev.target);
+  if (!zone) return;
+  ev.preventDefault();
+  const paths = Array.from((ev.dataTransfer && ev.dataTransfer.files) || [])
+    .map((f) => { try { return webUtils.getPathForFile(f); } catch { return ''; } })
+    .filter(Boolean);
+  if (paths.length) ipcRenderer.send(`mcss:files:dropped`, { paths });
+}, true);
 
 const api = {
   app: {
@@ -54,6 +75,10 @@ const api = {
     importFiles: (id, rel, sources) => invoke('files:import', { id, rel, sources }),
     size: (id, rel) => invoke('files:size', { id, rel }),
     path: (id, rel = '') => invoke('files:path', { id, rel }),
+    read: (id, rel) => invoke('files:read', { id, rel }),
+    write: (id, rel, text, expectSize = null) => invoke('files:write', { id, rel, text, expectSize }),
+    // test hook: pretend these paths were dropped on the file browser
+    __simulateDrop: (paths) => ipcRenderer.send(`mcss:files:dropped`, { paths }),
     reveal: (id, rel, openWithDefault = false) => invoke('files:reveal', { id, rel, openWithDefault })
   },
   backups: {
@@ -115,6 +140,11 @@ const api = {
     const listener = (_e, payload) => cb(payload);
     ipcRenderer.on('menu', listener);
     return () => ipcRenderer.removeListener('menu', listener);
+  },
+  onFilesDropped: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('files-dropped', listener);
+    return () => ipcRenderer.removeListener('files-dropped', listener);
   }
 };
 

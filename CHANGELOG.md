@@ -3,6 +3,46 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.4.0] — 2026-09-25
+
+The Files tab, rebuilt as an actual file browser.
+
+### Changed
+- **You browse the real folder now.** The Simple/Advanced switch is gone: left is a quick
+  access list (server folder, world, mods or plugins, logs, the root config files), right is
+  a toolbar with ← back, ↑ up, a clickable path bar and a filter box, and the listing has
+  file-type icons, size, modified date and sortable columns. Single click selects (the
+  status line below shows what), double click opens, right click opens the same row menu the
+  ⋯ button shows.
+- **Folders open inside the app.** In the old simple view a click on a folder ran into a
+  handler that ignored the target folder, so nothing happened at all — the most confusing
+  thing about the tab.
+- **Text files open in an in-app editor** (server.properties, configs, logs, .json, .yml,
+  .txt, …). Ctrl+S saves, Esc closes, closing with unsaved changes asks first, and a `.bak`
+  copy of the previous version is kept. A save is refused when the file changed on disk
+  while the editor was open — the server writes to these files while it runs. Files over
+  512 KB open read-only and show the tail, which is what you want in a log.
+- **Drag & drop import:** drop files or folders onto the listing and they land in the folder
+  you are looking at (the paths are resolved in the preload — Electron has no `File.path`).
+- **Keyboard:** ↑/↓ move the selection, Enter opens, F2 renames, Delete removes, Backspace
+  and Alt+← go back, Esc clears. Delete never fires while a text field has focus.
+
+### Added
+- "New file" next to "New folder", plus every row action in one menu.
+- `files:read` / `files:write` IPC (jailed, with optimistic locking), `files:path` for
+  "Copy path", and the drop relay from the preload to the renderer.
+- The smoke run can screenshot what is on screen (`MCSERVERSMITH_SMOKE_SHOT=1` →
+  `logs/ui-files.png`); that is how a layout gets reviewed instead of guessed at.
+
+### Verified
+- `npm run test:ui` — **113/113** (was 89). New coverage: double click into a folder, the
+  path bar and the ← / ↑ buttons, quick access navigation, row selection, keyboard
+  shortcuts, Delete inside a text field deleting nothing, the editor round trip (open →
+  edit → save → file on disk → `.bak` kept), the discard guard, and the drop import over
+  the real IPC chain.
+- Dev run *and* the packaged build (`dist/win-unpacked`) pass, and the screenshot of the
+  packaged build was checked by eye.
+
 ## [0.3.0] — 2026-09-25
 
 UI and usability. Two of these three defects were the same root cause, and the third

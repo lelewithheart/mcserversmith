@@ -145,6 +145,17 @@ function register({ ipcMain, manager, shell, dialog, app, getWindow }) {
   ipcMain.handle(`${M}:files:size`, wrap(({ id, rel }) => files.folderSize(id, rel)));
   // absolute path only (Copy path) — goes through the same jailed resolver
   ipcMain.handle(`${M}:files:path`, wrap(({ id, rel = '' }) => files.absolute(id, rel)));
+  ipcMain.handle(`${M}:files:read`, wrap(({ id, rel }) => files.readText(id, rel)));
+  ipcMain.handle(`${M}:files:write`, wrap(({ id, rel, text, expectSize = null }) => files.writeText(id, rel, text, expectSize)));
+  // A dropped file's path can only be resolved in the preload (Electron has no
+  // File.path any more), so the preload reports the drop and this forwards it to
+  // the renderer, which knows which instance and folder is on screen.
+  ipcMain.on(`${M}:files:dropped`, (_e, payload) => {
+    const win = getWindow ? getWindow() : null;
+    const paths = payload && Array.isArray(payload.paths) ? payload.paths.filter((p) => typeof p === 'string' && p) : [];
+    if (!paths.length) return;
+    if (win && !win.isDestroyed()) win.webContents.send('files-dropped', { paths });
+  });
   ipcMain.handle(`${M}:files:reveal`, wrap(async ({ id, rel, openWithDefault = false }) => {
     const target = files.absolute(id, rel);
     if (!fs.existsSync(target)) throw new Error('Not found');

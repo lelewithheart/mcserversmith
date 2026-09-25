@@ -1,7 +1,7 @@
 {
   "name": "mcserversmith",
   "productName": "MCServerSmith",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Cross-platform Minecraft server launcher: pick a version, pick a flavour, hit start. Auto-downloads the server jar and the right Java runtime, gives you a live dashboard, backups and a tunnel so nobody has to port-forward.",
   "main": "src/main/index.js",
   "author": {

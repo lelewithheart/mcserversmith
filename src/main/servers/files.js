@@ -174,6 +174,68 @@ function absolute(id, rel) {
   return safePath(id, rel).abs;
 }
 
+const TEXT_MAX = 512 * 1024;   // what the in-app editor loads
+const WRITE_MAX = 8 * 1024 * 1024;
+
+/**
+ * Read a file for the in-app editor.
+ * - refuses directories and binary content (a NUL byte in the sample)
+ * - files bigger than `max` are tailed instead of loaded whole (that is what you
+ *   want in a log, and it is why the editor marks them read-only)
+ */
+function readText(id, rel, max = TEXT_MAX) {
+  const { abs } = safePath(id, rel);
+  const st = fs.statSync(abs);
+  if (st.isDirectory()) throw new Error('Not a file');
+  const cap = Math.max(1024, Math.min(Number(max) || TEXT_MAX, WRITE_MAX));
+  const size = st.size;
+  const truncated = size > cap;
+  const buf = Buffer.alloc(truncated ? cap : size);
+  const fd = fs.openSync(abs, 'r');
+  try {
+    if (truncated) fs.readSync(fd, buf, 0, cap, size - cap);
+    else if (size > 0) fs.readSync(fd, buf, 0, size, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const binary = buf.includes(0);
+  return {
+    rel,
+    size,
+    mtime: st.mtimeMs,
+    truncated,
+    binary,
+    max: cap,
+    text: binary ? '' : buf.toString('utf8')
+  };
+}
+
+/**
+ * Write an editor buffer back to disk.
+ *
+ * `expectSize` is optimistic locking: the server writes server.properties,
+ * level.dat and the logs while it runs, so a buffer that was loaded before the
+ * server touched the file must not be written over it silently.
+ */
+function writeText(id, rel, text, expectSize = null) {
+  if (typeof text !== 'string') throw new Error('No content');
+  const bytes = Buffer.byteLength(text, 'utf8');
+  if (bytes > WRITE_MAX) throw new Error('File too large to save');
+  const { abs } = safePath(id, rel);
+  let st = null;
+  try { st = fs.statSync(abs); } catch { /* the file may not exist yet */ }
+  if (st && st.isDirectory()) throw new Error('Is a directory');
+  if (st && expectSize !== null && Number(expectSize) >= 0 && st.size !== Number(expectSize)) {
+    throw new Error('The file changed on disk — reopen it before saving');
+  }
+  // one backup next to the file: a bad edit to a config file should not be fatal
+  if (st && st.size > 0 && st.size <= 1024 * 1024) {
+    try { fs.copyFileSync(abs, `${abs}.bak`); } catch { /* best effort */ }
+  }
+  fs.writeFileSync(abs, text, 'utf8');
+  return { rel, size: bytes };
+}
+
 /** Human-readable folder size, capped so it stays fast. */
 function folderSize(id, rel, limit = 20000) {
   const { abs } = safePath(id, rel);
@@ -195,4 +257,4 @@ function folderSize(id, rel, limit = 20000) {
   return total;
 }
 
-module.exports = { list, simple, mkdir, rename, remove, importFiles, absolute, folderSize };
+module.exports = { list, simple, mkdir, rename, remove, importFiles, absolute, folderSize, readText, writeText };

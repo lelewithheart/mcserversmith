@@ -78,6 +78,10 @@ const state = {
   filesMenu: null,
   filesFilter: '',
   filesSort: { key: 'name', dir: 1 },
+  filesSel: null,
+  filesBackHist: [],
+  quick: {},
+  editor: null,
   lastConsoleId: null
 };
 
@@ -872,18 +876,75 @@ function currentFilesRel() {
   return (data && data.path) || '';
 }
 
-async function refreshFiles(rel) {
+function relPathOf(dir, name) {
+  return dir ? `${dir}/${name}` : name;
+}
+
+function baseName(rel) {
+  const s = String(rel || '');
+  const i = s.lastIndexOf('/');
+  return i === -1 ? s : s.slice(i + 1);
+}
+
+function parentRel(rel) {
+  const s = String(rel || '');
+  const i = s.lastIndexOf('/');
+  return i === -1 ? '' : s.slice(0, i);
+}
+
+const TEXT_EXT = ['properties', 'txt', 'log', 'json', 'json5', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'md', 'csv', 'xml', 'html', 'htm', 'css', 'js', 'mjs', 'ts', 'sh', 'bat', 'cmd', 'ps1', 'mcmeta', 'lang', 'env', 'gitignore'];
+const ARCHIVE_EXT = ['jar', 'zip', 'gz', 'tar', 'rar', '7z', 'mca', 'dat', 'nbt'];
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'];
+const AUDIO_EXT = ['mp3', 'ogg', 'wav', 'flac', 'm4a'];
+
+function extOf(name) {
+  const s = String(name || '');
+  const i = s.lastIndexOf('.');
+  return i === -1 ? '' : s.slice(i + 1).toLowerCase();
+}
+
+function isTextName(name) {
+  return TEXT_EXT.includes(extOf(name));
+}
+
+function fileIcon(name, dir) {
+  if (dir) return '📁';
+  const e = extOf(name);
+  if (ARCHIVE_EXT.includes(e)) return '📦';
+  if (IMAGE_EXT.includes(e)) return '🖼';
+  if (AUDIO_EXT.includes(e)) return '🎵';
+  if (['yml', 'yaml', 'json', 'toml', 'ini', 'cfg', 'conf', 'properties', 'env'].includes(e)) return '⚙';
+  if (['sh', 'bat', 'cmd', 'ps1'].includes(e)) return '⌨';
+  if (['txt', 'log', 'md'].includes(e)) return '📄';
+  return '📄';
+}
+
+/**
+ * One entry point for every navigation: keeps the ← history and the quick-access
+ * list (world, mods/plugins, logs, the root files) in sync with the folder on
+ * screen, and drops a selection that no longer exists.
+ */
+async function refreshFiles(rel, { history = 'none' } = {}) {
   const inst = state.instances.find((i) => i.id === state.activeId);
   if (!inst) return;
+  const from = currentFilesRel();
+  const target = rel === undefined ? from : String(rel || '');
   busy('files', true);
   try {
-    if (state.settings.filesAdvanced === true) {
-      const target = rel === undefined ? currentFilesRel() : rel;
-      const data = await call(api.files.list(inst.id, target || ''));
-      state.files[inst.id] = { path: data.path, parent: data.parent, entries: data.entries || [] };
-    } else {
-      const data = await call(api.files.simple(inst.id));
-      state.files[inst.id] = { path: '', parent: null, rows: data.rows || [] };
+    const data = await call(api.files.list(inst.id, target));
+    state.files[inst.id] = {
+      path: data.path,
+      absPath: data.absPath,
+      root: data.root,
+      parent: data.parent,
+      entries: data.entries || []
+    };
+    try { state.quick[inst.id] = await call(api.files.simple(inst.id)); } catch { /* keep the last list */ }
+    if (history === 'push' && data.path !== from) {
+      state.filesBackHist = [...(state.filesBackHist || []).slice(-24), from];
+    }
+    if (state.filesSel && !(data.entries || []).some((e) => relPathOf(data.path, e.name) === state.filesSel)) {
+      state.filesSel = null;
     }
   } catch (err) {
     notifyError(err);
@@ -893,21 +954,43 @@ async function refreshFiles(rel) {
   rerender();
 }
 
+async function filesNavigate(rel) {
+  state.filesSel = null;
+  await refreshFiles(rel, { history: 'push' });
+}
+
+async function filesBack() {
+  const hist = state.filesBackHist || [];
+  if (!hist.length) return;
+  const target = hist[hist.length - 1];
+  state.filesBackHist = hist.slice(0, -1);
+  state.filesSel = null;
+  await refreshFiles(target);
+}
+
+/** Double click / Enter: enter a folder, edit a text file, hand anything else to the OS. */
+async function filesOpen(rel, isDir) {
+  if (isDir) { await filesNavigate(rel); return; }
+  if (isTextName(rel)) { await openEditor(rel); return; }
+  try { await call(api.files.reveal(state.activeId, rel, true)); }
+  catch (err) { notifyError(err); }
+}
+
+/**
+ * The file browser: quick access on the left, a real listing on the right.
+ * Single click selects, double click opens (folder → enter, text file → editor,
+ * anything else → the OS default app). Right click opens the same row menu.
+ */
 function tabFiles(inst) {
-  const advanced = state.settings.filesAdvanced === true;
   const data = state.files[inst.id] || {};
   const rel = data.path || '';
+  const quick = (state.quick && state.quick[inst.id]) || { rows: [] };
   const sort = state.filesSort || { key: 'name', dir: 1 };
   const dirSign = sort.dir === -1 ? -1 : 1;
 
-  const rows = advanced
-    ? (data.entries || []).map((e) => ({
-        label: e.name, rel: (rel ? `${rel}/` : '') + e.name, dir: e.dir, size: e.size, mtime: e.mtime
-      }))
-    : (data.rows || []).filter((r) => r.exists).map((r) => ({
-        label: r.key.startsWith('file.') ? r.key.slice(5) : t(`files.${r.key}`),
-        rel: r.rel, dir: r.dir, size: r.size, mtime: null
-      }));
+  const rows = (data.entries || []).map((e) => ({
+    label: e.name, rel: relPathOf(rel, e.name), dir: !!e.dir, size: e.size, mtime: e.mtime, link: !!e.link
+  }));
 
   // folders first, then the selected column — the way a file manager sorts
   rows.sort((a, b) => {
@@ -919,22 +1002,10 @@ function tabFiles(inst) {
     return r * dirSign;
   });
 
-  const crumbs = [];
-  if (advanced) {
-    crumbs.push(`<a href="#" data-action="files-nav" data-rel="">${esc(inst.name)}</a>`);
-    const parts = rel.split('/').filter(Boolean);
-    parts.forEach((part, i) => {
-      const target = parts.slice(0, i + 1).join('/');
-      crumbs.push(`<span class="muted">/</span><a href="#" data-action="files-nav" data-rel="${esc(target)}">${esc(part)}</a>`);
-    });
-  }
-
   const head = (key, label) => `<th class="sortable ${sort.key === key ? 'sorted' : ''}" data-action="files-sort" data-sort="${key}">${esc(label)}<span class="sort-mark">${sort.key === key ? (dirSign > 0 ? '▲' : '▼') : ''}</span></th>`;
 
-  const rowHtml = (r) => `<tr class="file-row" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" data-dir="${r.dir ? '1' : '0'}">
-    <td class="fname"><button class="link" data-action="${r.dir ? 'files-nav' : 'files-open'}" data-rel="${esc(r.rel)}">
-        <span class="ico">${r.dir ? '📁' : '📄'}</span> ${esc(r.label)}</button>
-      ${advanced ? '' : `<div class="muted small mono">${esc(r.rel)}</div>`}</td>
+  const rowHtml = (r) => `<tr class="file-row ${state.filesSel === r.rel ? 'selected' : ''}" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" data-dir="${r.dir ? '1' : '0'}" data-size="${r.dir ? '' : (r.size || 0)}">
+    <td class="fname"><span class="ico">${fileIcon(r.label, r.dir)}</span> <span class="name">${esc(r.label)}</span>${r.link ? ' <span class="muted small">→</span>' : ''}</td>
     <td class="mono small">${r.dir ? '' : esc(humanSize(r.size))}</td>
     <td class="muted small">${esc(humanDate(r.mtime))}</td>
     <td class="actions">
@@ -942,49 +1013,120 @@ function tabFiles(inst) {
       ${state.filesMenu === r.rel ? filesMenu(r) : ''}
     </td></tr>`;
 
-  const body = rows.length
+  const listing = rows.length
     ? `<table class="files"><thead><tr>${head('name', t('files.name'))}${head('size', t('files.size'))}${head('mtime', t('files.modified'))}<th></th></tr></thead>
          <tbody>${rows.map(rowHtml).join('')}</tbody></table>
-       <div id="files-nomatch" class="muted small" style="display:none;margin-top:8px">${esc(t('files.noMatch'))}</div>`
-    : `<p class="muted">${esc(t('files.empty'))}</p>`;
+       <div id="files-nomatch" class="muted small" style="display:none;padding:10px 2px">${esc(t('files.noMatch'))}</div>`
+    : `<div class="files-empty">
+         <div class="files-empty-ico">📂</div>
+         <div>${esc(t('files.empty'))}</div>
+         <div class="muted small">${esc(t('files.dropHint'))}</div>
+       </div>`;
+
+  const sideItem = (icon, label, { target = '', action = 'files-goto', active = false, disabled = false } = {}) =>
+    `<button class="files-side-item ${active ? 'active' : ''}" data-action="${action}" data-rel="${esc(target)}" ${disabled ? 'disabled' : ''}>
+       <span class="ico">${icon}</span><span class="label">${esc(label)}</span>
+     </button>`;
+
+  const quickItems = [sideItem('🏠', t('files.root'), { target: '', active: rel === '' })];
+  for (const r of quick.rows || []) {
+    if (!r.exists) continue;
+    const label = r.key.startsWith('file.') ? r.key.slice(5) : t(`files.${r.key}`);
+    const active = r.dir ? (rel === r.rel || rel.startsWith(`${r.rel}/`)) : rel === r.rel;
+    quickItems.push(sideItem(r.dir ? '📁' : fileIcon(r.rel, false), label, { target: r.rel, active }));
+  }
+
+  const parts = rel.split('/').filter(Boolean);
+  const crumbs = [`<button class="crumb ${parts.length ? '' : 'current'}" ${parts.length ? 'data-action="files-goto" data-rel=""' : 'disabled'}>${esc(t('files.root'))}</button>`];
+  parts.forEach((part, i) => {
+    const target = parts.slice(0, i + 1).join('/');
+    const last = i === parts.length - 1;
+    crumbs.push('<span class="crumb-sep">/</span>');
+    crumbs.push(last
+      ? `<span class="crumb current">${esc(part)}</span>`
+      : `<button class="crumb" data-action="files-goto" data-rel="${esc(target)}">${esc(part)}</button>`);
+  });
 
   return `
-    <div class="card">
-      <div class="row between" style="margin-bottom:12px">
-        <div class="row">
-          <button class="btn btn-sm ${advanced ? 'btn-ghost' : 'btn-primary'}" data-action="files-mode" data-mode="simple">${esc(t('files.simple'))}</button>
-          <button class="btn btn-sm ${advanced ? 'btn-primary' : 'btn-ghost'}" data-action="files-mode" data-mode="advanced">${esc(t('files.advanced'))}</button>
+    <div class="files-layout">
+      <aside class="files-side">
+        <div class="files-side-head">${esc(t('files.quickAccess'))}</div>
+        <div class="files-side-list">${quickItems.join('')}</div>
+        <div class="files-side-head">${esc(t('files.actions'))}</div>
+        <div class="files-side-list">
+          ${sideItem('＋', t('files.newFolder'), { action: 'files-mkdir' })}
+          ${sideItem('＋', t('files.newFile'), { action: 'files-new-file' })}
+          ${sideItem('＋', t('files.addFiles'), { action: 'files-import' })}
+          ${sideItem('🗂', t('files.openFolder'), { action: 'files-reveal', target: rel })}
+          ${sideItem('↻', t('files.refresh'), { action: 'files-refresh' })}
         </div>
-        <div class="row">
-          <input type="text" id="files-filter" placeholder="${esc(t('files.filter'))}" value="${esc(state.filesFilter || '')}" style="width:170px" />
-          <button class="btn btn-sm" data-action="files-mkdir">${esc(t('files.newFolder'))}</button>
-          <button class="btn btn-sm" data-action="files-import">${esc(t('files.addFiles'))}</button>
-          <button class="btn btn-sm btn-ghost" data-action="files-refresh">${esc(t('files.refresh'))}</button>
-          <button class="btn btn-sm btn-ghost" data-action="files-reveal" data-rel="${esc(rel)}">${esc(t('files.openFolder'))}</button>
+      </aside>
+      <div class="files-main">
+        <div class="files-toolbar">
+          <button class="btn btn-sm btn-ghost" data-action="files-back" ${(state.filesBackHist || []).length ? '' : 'disabled'} title="${esc(t('files.back'))}">←</button>
+          <button class="btn btn-sm btn-ghost" data-action="files-up" ${rel ? '' : 'disabled'} title="${esc(t('files.up'))}">↑</button>
+          <div class="files-path">${crumbs.join('')}</div>
+          <input type="text" id="files-filter" placeholder="${esc(t('files.filter'))}" value="${esc(state.filesFilter || '')}" style="width:150px" />
         </div>
+        <div class="files-drop" data-drop-zone="files">
+          ${busy('files') ? `<p class="muted">${esc(t('common.loading'))}</p>` : listing}
+        </div>
+        <div class="files-status" id="files-status">${filesStatusText(rows)}</div>
       </div>
-      ${advanced ? `<div class="row small" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
-          <button class="btn btn-sm btn-ghost" data-action="files-up" ${rel ? '' : 'disabled'}>↑</button>
-          ${crumbs.join(' ')}
-        </div>` : `<p class="muted small" style="margin-bottom:10px">${esc(t('files.simpleHint'))}</p>`}
-      ${busy('files') ? `<p class="muted">${esc(t('common.loading'))}</p>` : body}
     </div>`;
 }
 
-/** Per-row overflow menu (replaces the two always-visible buttons per row). */
+/** The line under the listing: entry count plus what is selected. */
+function filesStatusText(rows) {
+  const list = rows || [];
+  const sel = list.find((r) => r.rel === state.filesSel);
+  const base = `${list.length} ${t('files.entries')}`;
+  if (!sel) return `${esc(base)} · ${esc(t('files.dblclickHint'))}`;
+  const size = sel.dir ? '' : ` · ${humanSize(sel.size)}`;
+  return `${esc(base)} · ${esc(sel.label)}${esc(size)}`;
+}
+
+/** Per-row overflow menu — the actions that do not fit on a row. */
 function filesMenu(r) {
-  const item = (action, label, extra = '') =>
-    `<button class="menu-item" data-action="${action}" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" ${extra}>${esc(label)}</button>`;
+  const item = (action, label) =>
+    `<button class="menu-item" data-action="${action}" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}" data-dir="${r.dir ? '1' : '0'}">${esc(label)}</button>`;
+  const sep = '<div class="menu-sep"></div>';
+  const head = r.dir
+    ? item('files-open', t('files.open'))
+    : (isTextName(r.label) ? item('files-edit', t('files.edit')) : item('files-open', t('files.openWithApp')));
   return `<div class="menu">
-      ${item(r.dir ? 'files-nav' : 'files-open', t('files.open'))}
+      ${head}
       ${r.dir ? item('files-import', t('files.addHere')) : ''}
-      <div class="menu-sep"></div>
+      ${(!r.dir && isTextName(r.label)) ? item('files-open', t('files.openWithApp')) : ''}
+      ${sep}
       ${item('files-rename', t('files.rename'))}
       ${item('files-delete', t('files.delete'))}
-      <div class="menu-sep"></div>
+      ${sep}
       ${item('files-reveal', t('files.openFolder'))}
       ${item('files-copy-path', t('files.copyPath'))}
     </div>`;
+}
+
+/** Highlights a row without re-rendering (so the caret in the filter stays put). */
+function selectFileRow(rel) {
+  state.filesSel = rel || null;
+  for (const tr of $$('tr.file-row', $('#content'))) {
+    tr.classList.toggle('selected', tr.dataset.rel === state.filesSel);
+  }
+  updateFilesStatus();
+}
+
+function updateFilesStatus() {
+  const el = $('#files-status');
+  if (!el) return;
+  const trs = $$('tr.file-row', $('#content'));
+  const sel = trs.find((tr) => tr.dataset.rel === state.filesSel);
+  el.textContent = filesStatusText(trs.map((tr) => ({
+    rel: tr.dataset.rel,
+    label: tr.dataset.name,
+    dir: tr.dataset.dir === '1',
+    size: Number(tr.dataset.size || 0)
+  })));
 }
 
 /** Hides non-matching rows in place, so typing in the filter never re-renders. */
@@ -998,8 +1140,168 @@ function applyFilesFilter() {
     if (hit) visible += 1;
   }
   const note = $('#files-nomatch');
-  if (note) note.style.display = (visible || !rows.length) ? 'none' : '';
+  if (note) note.style.display = (visible || !rows.length) ? 'none' : 'block';
   return visible;
+}
+
+// ---------------------------------------------------------------- editor
+/** Open a file in the in-app text editor (server.properties, configs, logs). */
+async function openEditor(rel) {
+  if (!state.activeId) return;
+  try {
+    const data = await call(api.files.read(state.activeId, rel));
+    if (data.binary) {
+      toast(t('files.binaryHint'), 'warn', 6000);
+      await call(api.files.reveal(state.activeId, rel, true));
+      return;
+    }
+    state.editor = {
+      rel,
+      text: data.text,
+      size: data.size,
+      expectSize: data.size,
+      truncated: !!data.truncated,
+      dirty: false
+    };
+    renderEditor();
+  } catch (err) {
+    notifyError(err);
+  }
+}
+
+function editorStateText() {
+  const e = state.editor;
+  if (!e) return '';
+  const bits = [humanSize(e.size)];
+  if (e.truncated) bits.push(t('files.readOnlyTail'));
+  if (e.dirty) bits.push(t('files.unsaved'));
+  return bits.join(' · ');
+}
+
+function updateEditorState() {
+  const el = $('#editor-state');
+  if (el) el.textContent = editorStateText();
+}
+
+function renderEditor() {
+  const host = $('#modal-root');
+  let wrap = $('#editor-wrap');
+  if (!state.editor) {
+    if (wrap) wrap.remove();
+    return;
+  }
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'editor-wrap';
+    wrap.className = 'modal-backdrop';
+    // a click on the backdrop closes it, but only when nothing was changed
+    wrap.addEventListener('mousedown', (ev) => { if (ev.target === wrap) closeEditor(); });
+    host.appendChild(wrap);
+  }
+  const e = state.editor;
+  wrap.innerHTML = `<div class="modal editor-modal">
+    <div class="row between" style="margin-bottom:10px;gap:12px">
+      <div class="row" style="gap:8px;min-width:0">
+        <span class="ico">${fileIcon(e.rel, false)}</span>
+        <h2 class="editor-name">${esc(e.rel)}</h2>
+      </div>
+      <div class="row">
+        <span class="muted small" id="editor-state">${esc(editorStateText())}</span>
+        <button class="btn btn-sm" data-action="editor-reveal">${esc(t('files.openFolder'))}</button>
+        <button class="btn btn-sm" data-action="editor-cancel">${esc(t('common.cancel'))}</button>
+        <button class="btn btn-sm btn-primary" data-action="editor-save" ${e.truncated ? 'disabled' : ''}>${esc(t('action.save'))}</button>
+      </div>
+    </div>
+    <textarea id="editor-text" spellcheck="false" ${e.truncated ? 'readonly' : ''}></textarea>
+    <div class="muted small" style="margin-top:8px">${esc(e.truncated ? t('files.tailHint') : t('files.editorHint'))}</div>
+  </div>`;
+  const ta = wrap.querySelector('#editor-text');
+  // never through innerHTML: the content has to survive byte for byte
+  ta.value = e.text;
+  ta.addEventListener('input', () => {
+    if (!state.editor) return;
+    state.editor.text = ta.value;
+    if (!state.editor.dirty) {
+      state.editor.dirty = true;
+      updateEditorState();
+    }
+  });
+  ta.focus();
+}
+
+async function saveEditor() {
+  const e = state.editor;
+  if (!e || e.truncated) return;
+  try {
+    const res = await call(api.files.write(state.activeId, e.rel, e.text, e.expectSize));
+    e.size = res.size;
+    e.expectSize = res.size;
+    e.dirty = false;
+    toast(t('files.saved'), 'success', 1600);
+    state.editor = null;
+    renderEditor();
+    await refreshFiles();
+  } catch (err) {
+    notifyError(err);
+  }
+}
+
+async function closeEditor() {
+  const e = state.editor;
+  if (!e) return;
+  if (e.dirty) {
+    const discard = await askConfirm({
+      title: t('files.unsavedTitle'),
+      body: t('files.unsavedBody'),
+      okLabel: t('files.discard'),
+      danger: true
+    });
+    if (!discard) return;
+  }
+  state.editor = null;
+  renderEditor();
+}
+
+/** Rename — also reachable with F2 on the selected row. */
+async function filesRename(rel, name) {
+  if (!rel) return;
+  const to = await askText({ title: t('files.rename'), body: t('files.renamePrompt'), value: name || baseName(rel) });
+  if (!to || to === name) return;
+  try {
+    await call(api.files.rename(state.activeId, rel, to));
+    toast(t('files.renamed'), 'success', 1600);
+    state.filesSel = null;
+    await refreshFiles();
+  } catch (err) { notifyError(err); }
+}
+
+/** Delete — also reachable with the Delete key on the selected row. */
+async function filesRemove(rel, name) {
+  if (!rel) return;
+  const yes = await askConfirm({
+    title: t('files.delete'),
+    body: t('files.confirmDelete', { name: name || baseName(rel) }),
+    okLabel: t('files.delete'),
+    danger: true
+  });
+  if (!yes) return;
+  try {
+    await call(api.files.remove(state.activeId, rel));
+    toast(t('files.deleted'), 'success', 1600);
+    state.filesSel = null;
+    await refreshFiles();
+  } catch (err) { notifyError(err); }
+}
+
+/** Import files/folders dropped on the browser (paths come from the preload). */
+async function filesImportDropped(paths) {
+  if (!Array.isArray(paths) || !paths.length) return;
+  if (state.view !== 'server' || state.tab !== 'files' || !state.activeId) return;
+  try {
+    const added = await call(api.files.importFiles(state.activeId, currentFilesRel(), paths));
+    toast(`${t('files.imported')} ${added.length}`, 'success', 2200);
+    await refreshFiles();
+  } catch (err) { notifyError(err); }
 }
 
 function viewRuntimes() {
@@ -1531,17 +1833,13 @@ const actions = {
     rerender();
   },
   // -------------------------------------------------------------- files ---
-  'files-mode': async (el) => {
-    const advanced = el.dataset.mode === 'advanced';
-    state.settings = await call(api.app.setSettings({ filesAdvanced: advanced }));
-    const cached = state.files[state.activeId];
-    if (cached) cached.path = '';
-    await refreshFiles('');
-  },
-  'files-nav': async (el) => { await refreshFiles(el.dataset.rel || ''); },
+  // the file browser navigates for real in both directions now: enter a folder
+  // from the quick access list, the crumb bar or a row (double click)
+  'files-goto': async (el) => { await filesNavigate(el.dataset.rel || ''); },
+  'files-nav': async (el) => { await filesNavigate(el.dataset.rel || ''); },
+  'files-back': async () => { await filesBack(); },
   'files-up': async () => {
-    const cur = currentFilesRel();
-    await refreshFiles(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '');
+    await filesNavigate(parentRel(currentFilesRel()));
   },
   'files-refresh': async () => { await refreshFiles(); toast(t('files.refreshed'), 'success', 1200); },
   'files-menu': async (el) => {
@@ -1561,10 +1859,8 @@ const actions = {
       toast(t('toast.copied'), 'success', 1400);
     } catch (err) { notifyError(err); }
   },
-  'files-open': async (el) => {
-    try { await call(api.files.reveal(state.activeId, el.dataset.rel, true)); }
-    catch (err) { notifyError(err); }
-  },
+  'files-open': async (el) => { await filesOpen(el.dataset.rel, el.dataset.dir === '1'); },
+  'files-edit': async (el) => { await openEditor(el.dataset.rel); },
   'files-reveal': async (el) => {
     try { await call(api.files.reveal(state.activeId, el.dataset.rel || '')); }
     catch (err) { notifyError(err); }
@@ -1578,6 +1874,16 @@ const actions = {
       await refreshFiles();
     } catch (err) { notifyError(err); }
   },
+  'files-new-file': async () => {
+    const name = await askText({ title: t('files.newFile'), body: t('files.newFilePrompt') });
+    if (!name) return;
+    try {
+      const rel = relPathOf(currentFilesRel(), name);
+      await call(api.files.write(state.activeId, rel, '', null));
+      await refreshFiles();
+      await openEditor(rel);
+    } catch (err) { notifyError(err); }
+  },
   'files-import': async (el) => {
     try {
       const picked = await call(api.app.pickFile({ properties: ['openFile', 'multiSelections'] }));
@@ -1588,32 +1894,15 @@ const actions = {
       await refreshFiles();
     } catch (err) { notifyError(err); }
   },
-  'files-rename': async (el) => {
-    const to = await askText({
-      title: t('files.rename'),
-      body: t('files.renamePrompt'),
-      value: el.dataset.name || ''
-    });
-    if (!to || to === el.dataset.name) return;
-    try {
-      await call(api.files.rename(state.activeId, el.dataset.rel, to));
-      toast(t('files.renamed'), 'success', 1600);
-      await refreshFiles();
-    } catch (err) { notifyError(err); }
-  },
-  'files-delete': async (el) => {
-    const yes = await askConfirm({
-      title: t('files.delete'),
-      body: t('files.confirmDelete', { name: el.dataset.name }),
-      okLabel: t('files.delete'),
-      danger: true
-    });
-    if (!yes) return;
-    try {
-      await call(api.files.remove(state.activeId, el.dataset.rel));
-      toast(t('files.deleted'), 'success', 1600);
-      await refreshFiles();
-    } catch (err) { notifyError(err); }
+  'files-rename': async (el) => { await filesRename(el.dataset.rel, el.dataset.name); },
+  'files-delete': async (el) => { await filesRemove(el.dataset.rel, el.dataset.name); },
+  'editor-save': async () => { await saveEditor(); },
+  'editor-cancel': async () => { await closeEditor(); },
+  'editor-reveal': async () => {
+    const e = state.editor;
+    if (!e) return;
+    try { await call(api.files.reveal(state.activeId, e.rel)); }
+    catch (err) { notifyError(err); }
   },
   'tab': async (el) => {
     state.tab = el.dataset.tab;
@@ -2000,6 +2289,12 @@ document.addEventListener('click', (ev) => {
   // selects fire their action on 'change', not on click — re-rendering while the
   // native dropdown is open would close it again immediately
   if (ev.target.matches('select, option')) return;
+  // single click on a row selects it, double click opens it
+  const row = ev.target.closest ? ev.target.closest('tr.file-row') : null;
+  if (row && !ev.target.closest('.menu')) selectFileRow(row.dataset.rel);
+  else if (!row && state.filesSel && !ev.target.closest('.files-side') && !ev.target.closest('.modal')) {
+    selectFileRow(null);   // a click next to the listing clears the selection
+  }
   const el = ev.target.closest('[data-action]');
   if (!el) {
     // a click that hits no action still closes an open file-row menu
@@ -2023,26 +2318,77 @@ document.addEventListener('click', (ev) => {
   }
 });
 
-// double-click a row: enter the folder / open the file. Right-click opens the
-// same row menu the ⋯ button shows — no need to hit the small button.
+// double click a row: enter the folder / open the file in the editor. Right
+// click selects the row and opens the same menu the ⋯ button shows.
 document.addEventListener('dblclick', (ev) => {
   const row = ev.target.closest('tr.file-row');
   if (!row || !row.dataset.rel) return;
-  if (row.dataset.dir === '1') refreshFiles(row.dataset.rel);
-  else call(api.files.reveal(state.activeId, row.dataset.rel, true)).catch(notifyError);
+  if (ev.target.closest('[data-action="files-menu"]') || ev.target.closest('.menu')) return;
+  filesOpen(row.dataset.rel, row.dataset.dir === '1');
 });
 
 document.addEventListener('contextmenu', (ev) => {
   const row = ev.target.closest('tr.file-row');
   if (!row) return;   // everywhere else the platform menu stays untouched
   ev.preventDefault();
+  selectFileRow(row.dataset.rel);
   state.filesMenu = row.dataset.rel;
   rerender();
 });
 
+// The file list is keyboard-navigable (Explorer-like): arrows move, Enter opens,
+// F2 renames, Delete removes, Backspace/Alt+Left go back.
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape' && state.filesMenu) { state.filesMenu = null; rerender(); }
+  if (state.editor) {
+    if (ev.key === 'Escape') { ev.preventDefault(); closeEditor(); return; }
+    if ((ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === 's') { ev.preventDefault(); saveEditor(); }
+    return;   // everything else belongs to the textarea
+  }
+  if (ev.key === 'Escape' && state.filesMenu) { state.filesMenu = null; rerender(); return; }
+  if (state.view !== 'server' || state.tab !== 'files') return;
+  const active = document.activeElement;
+  if (active && active.matches && active.matches('input, textarea, select')) return;   // never hijack typing
+  const rows = $$('tr.file-row', $('#content')).filter((tr) => tr.style.display !== 'none');
+  if (ev.altKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp')) {
+    ev.preventDefault();
+    if (ev.key === 'ArrowLeft') filesBack();
+    else filesNavigate(parentRel(currentFilesRel()));
+    return;
+  }
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    if (!rows.length) return;
+    ev.preventDefault();
+    const i = rows.findIndex((tr) => tr.dataset.rel === state.filesSel);
+    const next = ev.key === 'ArrowDown'
+      ? Math.min(rows.length - 1, i + 1)
+      : Math.max(0, i <= 0 ? 0 : i - 1);
+    selectFileRow(rows[next].dataset.rel);
+    rows[next].scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (!state.filesSel) return;
+  const tr = rows.find((x) => x.dataset.rel === state.filesSel);
+  const isDir = tr ? tr.dataset.dir === '1' : false;
+  if (ev.key === 'Enter') { ev.preventDefault(); filesOpen(state.filesSel, isDir); }
+  else if (ev.key === 'Backspace') { ev.preventDefault(); filesBack(); }
+  else if (ev.key === 'Delete') { ev.preventDefault(); filesRemove(state.filesSel, baseName(state.filesSel)); }
+  else if (ev.key === 'F2') { ev.preventDefault(); filesRename(state.filesSel, baseName(state.filesSel)); }
+  else if (ev.key === 'Escape') { selectFileRow(null); }
 });
+
+// Drag & drop: highlight the listing while dragging (the preload resolves the
+// dropped paths and hands them back over IPC).
+document.addEventListener('dragover', (ev) => {
+  const zone = ev.target.closest ? ev.target.closest('[data-drop-zone]') : null;
+  for (const z of $$('[data-drop-zone]')) z.classList.toggle('dropping', z === zone);
+});
+document.addEventListener('dragleave', () => {
+  for (const z of $$('[data-drop-zone]')) z.classList.remove('dropping');
+});
+document.addEventListener('drop', () => {
+  for (const z of $$('[data-drop-zone]')) z.classList.remove('dropping');
+});
+api.onFilesDropped((payload) => { filesImportDropped(payload && payload.paths); });
 
 document.addEventListener('change', async (ev) => {
   const target = ev.target;

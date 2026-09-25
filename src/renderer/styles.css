@@ -245,14 +245,53 @@ td.actions { text-align: right; white-space: nowrap; }
 .scroll-y { max-height: 320px; overflow-y: auto; }
 
 /* -------------------------------------------------------- files & menus */
-table.files td.fname { max-width: 460px; }
-button.link {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: none; border: 0; padding: 0; color: var(--text);
-  font: inherit; text-align: left; cursor: pointer;
+.files-layout { display: flex; gap: 14px; align-items: flex-start; }
+.files-side {
+  flex: 0 0 208px; width: 208px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px;
 }
-button.link:hover { color: var(--accent); }
+.files-side-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); padding: 8px 6px 4px;
+}
+.files-side-list { display: flex; flex-direction: column; gap: 1px; }
+.files-side-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 8px; background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.files-side-item .ico { flex: 0 0 16px; }
+.files-side-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-side-item:hover { background: var(--bg-3); }
+.files-side-item.active { background: rgba(91, 140, 255, .14); }
+.files-side-item:disabled { opacity: .45; cursor: default; }
+.files-main { flex: 1 1 auto; min-width: 0; }
+.files-toolbar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 6px 8px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.files-path { flex: 1 1 auto; display: flex; align-items: center; overflow-x: auto; white-space: nowrap; font-size: 13px; }
+.files-path .crumb {
+  background: none; border: 0; padding: 2px 5px; border-radius: 6px;
+  color: var(--accent); font: inherit; cursor: pointer;
+}
+.files-path .crumb.current, .files-path .crumb:disabled { color: var(--text); cursor: default; }
+.files-path .crumb:not(:disabled):hover { background: var(--bg-3); }
+.files-path .crumb-sep { color: var(--muted); }
+.files-drop {
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2);
+  min-height: 240px; padding: 2px 4px;
+  transition: border-color .12s ease, background .12s ease;
+}
+.files-drop.dropping { border-color: var(--accent); background: rgba(91, 140, 255, .09); }
+.files-status { color: var(--muted); font-size: 12px; padding: 8px 2px 0; }
+.files-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 46px 10px; color: var(--muted); }
+.files-empty-ico { font-size: 30px; opacity: .7; }
+
+table.files td.fname { display: flex; align-items: center; gap: 8px; }
+tr.file-row { cursor: default; }
 tr.file-row:hover td { background: var(--bg-3); }
+tr.file-row.selected td { background: rgba(91, 140, 255, .16); }
 td.actions { position: relative; width: 46px; text-align: right; }
 th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 th.sortable:hover, th.sortable.sorted { color: var(--text); }
@@ -273,4 +312,18 @@ th.sortable .sort-mark { margin-left: 5px; font-size: 9px; color: var(--accent);
 
 .modal.dialog { width: min(460px, 96vw); }
 .modal.dialog .prewrap { color: var(--muted); font-size: 13px; }
+
+/* ------------------------------------------------------------- editor */
+.editor-modal { width: min(940px, 96vw); display: flex; flex-direction: column; }
+.editor-modal .editor-name {
+  margin: 0; font-size: 15px; font-family: var(--mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.editor-modal #editor-text {
+  width: 100%; min-height: 52vh; max-height: 72vh; resize: vertical;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  white-space: pre; overflow: auto; tab-size: 4;
+}
+.editor-modal #editor-text:focus { outline: 1px solid var(--accent); }
 .prewrap { white-space: pre-wrap; }
