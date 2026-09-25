@@ -39,9 +39,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            script: npm run dist:win
+            script: npm run dist:win -- --publish never
           - os: ubuntu-latest
-            script: npm run dist:linux
+            script: npm run dist:linux -- --publish never
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -53,9 +53,8 @@ jobs:
       - name: Generate icon
         run: node tools/make-icon.js
       - name: Build installers
-        # On a tag push electron-builder publishes implicitly (v27 will require
-        # --publish explicitly); on a manual run there is no tag, so it only
-        # builds and the artifacts below are the deliverable.
+        # Build artifacts only. Publishing is handled separately so CI does not
+        # fail when release creation is unavailable to this token.
         run: ${{ matrix.script }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
