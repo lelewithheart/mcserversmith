@@ -3,6 +3,20 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.2.0] — 2026-09-25
+
+### Added
+- **File browser tab** with two views:
+  - *Simple*: only what a server owner normally touches — the world (including nether/end, read from
+    `level-name`), the mods or plugins folder, mod configs, logs and the important root files
+    (`server.properties`, `eula.txt`, `ops.json`, `whitelist.json`, `banned-*`, `user_jvm_args.txt`, the server jar)
+  - *Advanced*: full browse of the server folder with breadcrumbs, sizes and timestamps
+- File actions: open a file with the default application, open a folder in the system file manager,
+  create folder, add files from disk (multi-select), rename, delete
+- Every path from the UI is resolved inside the instance's server folder and rejected if it escapes it
+- `server.properties` and `eula.txt` cannot be overwritten by the file import (they belong to the
+  Config tab); importing a file that already exists stores a timestamped copy instead of clobbering it
+
 ## [0.1.0] — 2026-09-25
 
 First complete build. Everything below was verified against real servers, not just unit-tested.

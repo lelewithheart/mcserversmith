@@ -20,6 +20,7 @@ const DEFAULTS = {
   showUpsellCards: true,
   showSupporterNudge: true,
   showPublicIp: true,
+  filesAdvanced: false,
   autoPortForward: true,
   telemetry: false,
   lastInstanceId: null,

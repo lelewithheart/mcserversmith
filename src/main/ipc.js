@@ -19,6 +19,7 @@ require('./providers/spigot');
 
 const instances = require('./servers/instances');
 const backup = require('./servers/backup');
+const files = require('./servers/files');
 const plugins = require('./servers/plugins');
 const props = require('./servers/props');
 const upnp = require('./servers/upnp');
@@ -132,6 +133,26 @@ function register({ ipcMain, manager, shell, dialog, app, getWindow }) {
   ipcMain.handle(`${M}:props:set`, wrap(({ id, patch }) => {
     const p = instances.instancePaths(id);
     return props.writeProperties(p.properties, patch);
+  }));
+
+  // ------------------------------------------------------------ files ------
+  ipcMain.handle(`${M}:files:list`, wrap(({ id, rel = '' }) => files.list(id, rel)));
+  ipcMain.handle(`${M}:files:simple`, wrap(({ id }) => files.simple(id)));
+  ipcMain.handle(`${M}:files:mkdir`, wrap(({ id, rel, name }) => files.mkdir(id, rel, name)));
+  ipcMain.handle(`${M}:files:rename`, wrap(({ id, rel, to }) => files.rename(id, rel, to)));
+  ipcMain.handle(`${M}:files:delete`, wrap(({ id, rel }) => files.remove(id, rel)));
+  ipcMain.handle(`${M}:files:import`, wrap(({ id, rel, sources }) => files.importFiles(id, rel, sources)));
+  ipcMain.handle(`${M}:files:size`, wrap(({ id, rel }) => files.folderSize(id, rel)));
+  ipcMain.handle(`${M}:files:reveal`, wrap(async ({ id, rel, openWithDefault = false }) => {
+    const target = files.absolute(id, rel);
+    if (!fs.existsSync(target)) throw new Error('Not found');
+    if (openWithDefault) {
+      const err = await require('electron').shell.openPath(target);
+      if (err) throw new Error(err);
+      return target;
+    }
+    require('electron').shell.showItemInFolder(target);
+    return target;
   }));
 
   // ------------------------------------------------------------ backups ---

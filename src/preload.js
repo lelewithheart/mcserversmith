@@ -45,6 +45,16 @@ const api = {
     get: (id) => invoke('props:get', { id }),
     set: (id, patch) => invoke('props:set', { id, patch })
   },
+  files: {
+    list: (id, rel = '') => invoke('files:list', { id, rel }),
+    simple: (id) => invoke('files:simple', { id }),
+    mkdir: (id, rel, name) => invoke('files:mkdir', { id, rel, name }),
+    rename: (id, rel, to) => invoke('files:rename', { id, rel, to }),
+    remove: (id, rel) => invoke('files:delete', { id, rel }),
+    importFiles: (id, rel, sources) => invoke('files:import', { id, rel, sources }),
+    size: (id, rel) => invoke('files:size', { id, rel }),
+    reveal: (id, rel, openWithDefault = false) => invoke('files:reveal', { id, rel, openWithDefault })
+  },
   backups: {
     list: (id) => invoke('backup:list', { id }),
     create: (id, label) => invoke('backup:create', { id, label }),

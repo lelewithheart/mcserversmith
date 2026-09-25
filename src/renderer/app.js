@@ -72,6 +72,7 @@ const state = {
   busy: {},
   autoScroll: true,
   autoScrollManual: false,
+  files: {},
   lastConsoleId: null
 };
 
@@ -281,10 +282,11 @@ function viewServer() {
   const inst = state.instances.find((i) => i.id === state.activeId);
   if (!inst) return `<div class="card">${esc(t('nav.noServers'))}</div>`;
   const st = state.statuses[inst.id] || {};
-  const tabs = ['overview', 'console', 'players', 'addons', 'backups', 'network', 'config'];
+  const tabs = ['overview', 'console', 'players', 'addons', 'files', 'backups', 'network', 'config'];
   const tabLabels = {
     overview: 'tab.overview', console: 'tab.console', players: 'tab.players',
     addons: inst.kind === 'modded' ? 'tab.mods' : 'tab.plugins',
+    files: 'tab.files',
     backups: 'tab.backups', network: 'tab.network', config: 'tab.config'
   };
   return `
@@ -299,6 +301,7 @@ function viewServer() {
     ${state.tab === 'console' ? tabConsole(inst, st) : ''}
     ${state.tab === 'players' ? tabPlayers(inst, st) : ''}
     ${state.tab === 'addons' ? tabAddons(inst, st) : ''}
+    ${state.tab === 'files' ? tabFiles(inst) : ''}
     ${state.tab === 'backups' ? tabBackups(inst, st) : ''}
     ${state.tab === 'network' ? tabNetwork(inst, st) : ''}
     ${state.tab === 'config' ? tabConfig(inst, st) : ''}`;
@@ -711,6 +714,112 @@ function viewSettings() {
       </div>
     </div>
   </div>`;
+}
+
+// ------------------------------------------------------------------- files
+
+function humanSize(bytes) {
+  if (bytes === null || bytes === undefined) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = Number(bytes);
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i += 1; }
+  return `${i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
+}
+
+function humanDate(ms) {
+  if (!ms) return '';
+  try {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return ''; }
+}
+
+function currentFilesRel() {
+  const data = state.files[state.activeId];
+  return (data && data.path) || '';
+}
+
+async function refreshFiles(rel) {
+  const inst = state.instances.find((i) => i.id === state.activeId);
+  if (!inst) return;
+  busy('files', true);
+  try {
+    if (state.settings.filesAdvanced === true) {
+      const target = rel === undefined ? currentFilesRel() : rel;
+      const data = await call(api.files.list(inst.id, target || ''));
+      state.files[inst.id] = { path: data.path, parent: data.parent, entries: data.entries || [] };
+    } else {
+      const data = await call(api.files.simple(inst.id));
+      state.files[inst.id] = { path: '', parent: null, rows: data.rows || [] };
+    }
+  } catch (err) {
+    notifyError(err);
+  } finally {
+    busy('files', false);
+  }
+  rerender();
+}
+
+function tabFiles(inst) {
+  const advanced = state.settings.filesAdvanced === true;
+  const data = state.files[inst.id] || {};
+  const rel = data.path || '';
+  const rows = advanced
+    ? (data.entries || []).map((e) => ({
+        label: e.name, rel: (rel ? `${rel}/` : '') + e.name, dir: e.dir, size: e.size, mtime: e.mtime
+      }))
+    : (data.rows || []).filter((r) => r.exists).map((r) => ({
+        label: r.key.startsWith('file.') ? r.key.slice(5) : t(`files.${r.key}`),
+        rel: r.rel, dir: r.dir, size: r.size, mtime: null
+      }));
+
+  const crumbs = [];
+  if (advanced) {
+    crumbs.push(`<a href="#" data-action="files-nav" data-rel="">${esc(inst.name)}</a>`);
+    const parts = rel.split('/').filter(Boolean);
+    parts.forEach((part, i) => {
+      const target = parts.slice(0, i + 1).join('/');
+      crumbs.push(`<span class="muted">/</span><a href="#" data-action="files-nav" data-rel="${esc(target)}">${esc(part)}</a>`);
+    });
+  }
+
+  const body = rows.length
+    ? `<table><thead><tr>
+         <th>${esc(t('files.name'))}</th><th>${esc(t('files.size'))}</th><th>${esc(t('files.modified'))}</th><th></th>
+       </tr></thead><tbody>${rows.map((r) => `<tr>
+         <td>${r.dir ? '📁' : '📄'} <a href="#" data-action="${r.dir ? 'files-nav' : 'files-open'}" data-rel="${esc(r.rel)}">${esc(r.label)}</a>
+           ${advanced ? '' : `<div class="muted small mono">${esc(r.rel)}</div>`}</td>
+         <td class="mono small">${r.dir ? '' : esc(humanSize(r.size))}</td>
+         <td class="muted small">${esc(humanDate(r.mtime))}</td>
+         <td><div class="row">
+           ${!advanced && r.dir ? `<button class="btn btn-sm btn-ghost" title="${esc(t('files.addHere'))}" data-action="files-import" data-rel="${esc(r.rel)}">＋</button>` : ''}
+           <button class="btn btn-sm btn-ghost" data-action="files-rename" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}">${esc(t('files.rename'))}</button>
+           <button class="btn btn-sm btn-ghost" data-action="files-delete" data-rel="${esc(r.rel)}" data-name="${esc(r.label)}">${esc(t('files.delete'))}</button>
+         </div></td></tr>`).join('')}</tbody></table>`
+    : `<p class="muted">${esc(t('files.empty'))}</p>`;
+
+  return `
+    <div class="card">
+      <div class="row between" style="margin-bottom:12px">
+        <div class="row">
+          <button class="btn btn-sm ${advanced ? 'btn-ghost' : 'btn-primary'}" data-action="files-mode" data-mode="simple">${esc(t('files.simple'))}</button>
+          <button class="btn btn-sm ${advanced ? 'btn-primary' : 'btn-ghost'}" data-action="files-mode" data-mode="advanced">${esc(t('files.advanced'))}</button>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" data-action="files-mkdir">${esc(t('files.newFolder'))}</button>
+          <button class="btn btn-sm" data-action="files-import">${esc(t('files.addFiles'))}</button>
+          <button class="btn btn-sm btn-ghost" data-action="files-refresh">${esc(t('files.refresh'))}</button>
+          <button class="btn btn-sm btn-ghost" data-action="files-reveal" data-rel="${esc(rel)}">${esc(t('files.openFolder'))}</button>
+        </div>
+      </div>
+      ${advanced ? `<div class="row small" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-sm btn-ghost" data-action="files-up" ${rel ? '' : 'disabled'}>↑</button>
+          ${crumbs.join(' ')}
+        </div>` : `<p class="muted small" style="margin-bottom:10px">${esc(t('files.simpleHint'))}</p>`}
+      ${busy('files') ? `<p class="muted">${esc(t('common.loading'))}</p>` : body}
+    </div>`;
 }
 
 function viewRuntimes() {
@@ -1127,6 +1236,64 @@ const actions = {
     } catch { /* ignore */ }
     rerender();
   },
+  // -------------------------------------------------------------- files ---
+  'files-mode': async (el) => {
+    const advanced = el.dataset.mode === 'advanced';
+    state.settings = await call(api.app.setSettings({ filesAdvanced: advanced }));
+    const cached = state.files[state.activeId];
+    if (cached) cached.path = '';
+    await refreshFiles('');
+  },
+  'files-nav': async (el) => { await refreshFiles(el.dataset.rel || ''); },
+  'files-up': async () => {
+    const cur = currentFilesRel();
+    await refreshFiles(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '');
+  },
+  'files-refresh': async () => { await refreshFiles(); toast(t('files.refreshed'), 'success', 1200); },
+  'files-open': async (el) => {
+    try { await call(api.files.reveal(state.activeId, el.dataset.rel, true)); }
+    catch (err) { notifyError(err); }
+  },
+  'files-reveal': async (el) => {
+    try { await call(api.files.reveal(state.activeId, el.dataset.rel || '')); }
+    catch (err) { notifyError(err); }
+  },
+  'files-mkdir': async () => {
+    const name = prompt(t('files.newFolderPrompt'));
+    if (!name) return;
+    try {
+      await call(api.files.mkdir(state.activeId, currentFilesRel(), name));
+      toast(t('files.created'), 'success', 1600);
+      await refreshFiles();
+    } catch (err) { notifyError(err); }
+  },
+  'files-import': async (el) => {
+    try {
+      const picked = await call(api.app.pickFile({ properties: ['openFile', 'multiSelections'] }));
+      if (!picked || !picked.length) return;
+      const target = el.dataset.rel || currentFilesRel();
+      const added = await call(api.files.importFiles(state.activeId, target, picked));
+      toast(`${t('files.imported')} ${added.length}`, 'success', 2200);
+      await refreshFiles();
+    } catch (err) { notifyError(err); }
+  },
+  'files-rename': async (el) => {
+    const to = prompt(t('files.renamePrompt'), el.dataset.name);
+    if (!to || to === el.dataset.name) return;
+    try {
+      await call(api.files.rename(state.activeId, el.dataset.rel, to));
+      toast(t('files.renamed'), 'success', 1600);
+      await refreshFiles();
+    } catch (err) { notifyError(err); }
+  },
+  'files-delete': async (el) => {
+    if (!confirm(t('files.confirmDelete').replace('{name}', el.dataset.name))) return;
+    try {
+      await call(api.files.remove(state.activeId, el.dataset.rel));
+      toast(t('files.deleted'), 'success', 1600);
+      await refreshFiles();
+    } catch (err) { notifyError(err); }
+  },
   'tab': async (el) => {
     state.tab = el.dataset.tab;
     if (state.tab === 'console') {
@@ -1144,6 +1311,7 @@ const actions = {
       try { state.props[state.activeId] = await call(api.props.get(state.activeId)); } catch { /* ignore */ }
     }
     if (state.tab === 'network') refreshTunnel();
+    if (state.tab === 'files') refreshFiles();
     rerender();
   },
   'start': async (el) => {

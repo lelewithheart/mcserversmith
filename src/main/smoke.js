@@ -242,6 +242,72 @@ function script() {
     if (cancel3) cancel3.click();
     await sleep(300);
 
+    // ---- files tab ------------------------------------------------------
+    const made = await window.mcss.instances.create({
+      name: 'files-smoke', provider: 'paper', mcVersion: '1.21.4',
+      port: 25577, rconPort: 26577, acceptEula: true, memoryMB: 1024,
+      confirmedAdvanced: true
+    });
+    const instId = made && made.ok ? made.data.id : null;
+    ok('test instance created for the files tab', !!instId, instId || (made && made.error));
+
+    if (instId) {
+      state.instances = (await window.mcss.instances.list()).data || [];
+      state.activeId = instId;
+      state.settings.filesAdvanced = false;
+      state.view = 'server';
+      state.tab = 'files';
+      await refreshFiles();
+      await sleep(600);   // rerender() is coalesced through setTimeout
+
+      const simpleRows = document.querySelectorAll('#content table tbody tr');
+      ok('files: simple view lists entries', simpleRows.length > 0, simpleRows.length + ' rows');
+      const simpleText = $('#content').textContent;
+      ok('files: simple view shows server.properties', simpleText.includes('server.properties'));
+      ok('files: simple view explains itself', !!$('#content .muted') && /Einfach|Simple|touch|anfasst/i.test(simpleText));
+
+      // switch to the advanced view through the real button
+      const advBtn = document.querySelector('[data-action="files-mode"][data-mode="advanced"]');
+      ok('files: view switch present', !!advBtn);
+      if (advBtn) { advBtn.click(); await sleep(900); }
+      ok('files: advanced mode is persisted', (await window.mcss.app.getSettings()).data.filesAdvanced === true);
+      const advText = $('#content').textContent;
+      ok('files: advanced view lists the folder', advText.includes('server.properties'), advText.length + ' chars');
+
+      // navigate + create + delete through the IPC the UI uses
+      const inside = await window.mcss.files.list(instId, '');
+      ok('files: list IPC returns entries', Array.isArray(inside.data.entries) && inside.data.entries.length > 0,
+        inside.data && inside.data.entries ? inside.data.entries.length + ' entries' : 'none');
+      await window.mcss.files.mkdir(instId, '', 'smoke-dir');
+      const afterMkdir = await window.mcss.files.list(instId, '');
+      ok('files: folder created', afterMkdir.data.entries.some((e) => e.name === 'smoke-dir' && e.dir));
+      const inSmoke = await window.mcss.files.list(instId, 'smoke-dir');
+      ok('files: can enter the new folder', inSmoke.data.path === 'smoke-dir', inSmoke.data.path);
+      ok('files: traversal is refused', !(await window.mcss.files.list(instId, '../../..')).ok);
+      ok('files: can delete the folder', (await window.mcss.files.remove(instId, 'smoke-dir')).ok);
+      const afterDelete = await window.mcss.files.list(instId, '');
+      ok('files: folder is gone', !afterDelete.data.entries.some((e) => e.name === 'smoke-dir'));
+
+      // back to simple, then clean up the test instance
+      const simpleBtn = document.querySelector('[data-action="files-mode"][data-mode="simple"]');
+      if (simpleBtn) { simpleBtn.click(); await sleep(900); }
+      ok('files: back to simple mode', (await window.mcss.app.getSettings()).data.filesAdvanced === false);
+
+      // a plugin server must offer "Plugins", not "Mods", and the world folder
+      // must appear as soon as it exists
+      await window.mcss.files.mkdir(instId, '', 'world');
+      await window.mcss.files.mkdir(instId, '', 'plugins');
+      await refreshFiles();
+      await sleep(700);
+      const filled = $('#content').textContent;
+      const pluginRows = document.querySelectorAll('#content table tbody tr').length;
+      ok('files: plugin server shows a Plugins entry', filled.includes('Plugins'), pluginRows + ' rows');
+      ok('files: world appears once it exists', /Welt|World/.test(filled));
+      ok('files: mods entry is not shown for a plugin server', !/Mod-Konfigurationen|Mod configs/.test(filled));
+
+      await window.mcss.instances.remove(instId, true);
+    }
+
     ok('no uncaught renderer errors', out.consoleErrors.length === 0, out.consoleErrors.join(' | '));
     return out;
   })()`;
