@@ -229,6 +229,45 @@ function script() {
       ok('language reverts to english', ((await window.mcss.app.getSettings()).data.language) === 'en', before + ' -> ' + ((await window.mcss.app.getSettings()).data.language));
     }
 
+    // ---- updates: the card + the "check now" button ----------------------
+    // The autoUpdate switch used to store a value and do nothing at all: there
+    // was no updater behind it. This proves the switch now has a real status, a
+    // button that reaches the main process, and a reason when it cannot run
+    // (an unpackaged dev run is not allowed to replace itself).
+    const settingsBtn2 = document.querySelector('[data-action="goto"][data-view="settings"]');
+    if (settingsBtn2) { settingsBtn2.click(); await sleep(900); }
+    const updateStatusEl = document.querySelector('[data-update-status]');
+    ok('updates: the settings card states a status', !!updateStatusEl,
+      updateStatusEl ? ('status=' + updateStatusEl.dataset.updateStatus + ' text=' + updateStatusEl.textContent.slice(0, 60)) : 'no card');
+    const updateCheckBtn = document.querySelector('[data-action="update-check"]');
+    ok('updates: there is a "check now" button', !!updateCheckBtn);
+    const updateState = await window.mcss.updater.state();
+    ok('updates: the main process answers with a status',
+      !!(updateState && updateState.ok && updateState.data && updateState.data.status),
+      updateState && updateState.data ? JSON.stringify(updateState.data).slice(0, 140) : ('error: ' + (updateState && updateState.error)));
+    const stNow = updateState && updateState.data ? updateState.data.status : '';
+    ok('updates: a build that cannot self-update says why',
+      stNow !== 'disabled' || ['dev', 'store', 'itch', 'missing'].includes(updateState.data.reason),
+      stNow + '/' + (updateState && updateState.data && updateState.data.reason));
+    if (updateCheckBtn && !updateCheckBtn.disabled) {
+      updateCheckBtn.click();
+      let after = null;
+      for (let i = 0; i < 12 && !after; i += 1) {
+        await sleep(1500);
+        const el = document.querySelector('[data-update-status]');
+        const s = el ? el.dataset.updateStatus : '';
+        if (['uptodate', 'available', 'ready', 'error', 'disabled'].includes(s)) after = s;
+      }
+      ok('updates: "check now" reaches a decision', !!after, after || 'still checking after 18s');
+    } else {
+      ok('updates: the button is disabled only for a reason the card explains',
+        !!updateCheckBtn && /not available|updated by|itch app/i.test((document.querySelector('[data-update-status]') || {}).textContent || ''),
+        updateCheckBtn ? (updateCheckBtn.disabled + ' — ' + (document.querySelector('[data-update-status]') || {}).textContent) : 'missing');
+    }
+    ok('updates: the state IPC round trip came from the main process, not the DOM',
+      !!(updateState && updateState.data && 'current' in updateState.data),
+      JSON.stringify(updateState && updateState.data).slice(0, 100));
+
     // ---- wizard checkboxes: the bug that made the wizard unusable -------
     // Spigot is an "advanced" provider: step 1 refuses to continue until the
     // user ticks the acknowledgement box, so this exercises both the checkbox

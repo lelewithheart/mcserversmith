@@ -55,6 +55,8 @@ jobs:
         run: node tools/test-providers.js
       - name: Plugin browser APIs (live)
         run: node tools/test-plugins.js
+      - name: Update feed contract (live)
+        run: node tools/check-update-feed.js
 
   build:
     needs: verify
@@ -169,3 +171,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+
+      # itch.io gets the same artifacts. butler replaces one build per channel and
+      # takes the version from --userversion, so itch always shows the tag that was
+      # just released. Skipped (not failed) while the BUTLER_API_KEY secret is
+      # missing, so a release never blocks on a channel that is not set up yet.
+      - name: Upload to itch.io (butler)
+        shell: bash
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          MCSERVERSMITH_ITCH_TARGET: ${{ vars.MCSERVERSMITH_ITCH_TARGET }}
+        run: |
+          if [ -z "$BUTLER_API_KEY" ]; then
+            echo "::notice::BUTLER_API_KEY is not set — skipping the itch.io upload"
+            exit 0
+          fi
+          if [ -z "$MCSERVERSMITH_ITCH_TARGET" ]; then
+            echo "::warning::BUTLER_API_KEY is set but MCSERVERSMITH_ITCH_TARGET is not — skipping the itch.io upload"
+            echo "::warning::set the repository variable MCSERVERSMITH_ITCH_TARGET to <username>/<project>"
+            exit 0
+          fi
+          curl -sL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -o -q butler.zip && chmod +x butler && ./butler version
+          BUTLER_PATH="$PWD/butler" node tools/itch-publish.js --all

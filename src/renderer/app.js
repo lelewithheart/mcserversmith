@@ -88,6 +88,7 @@ const state = {
   filesBackHist: [],
   quick: {},
   editor: null,
+  update: { status: 'idle', current: null, available: null, percent: 0, reason: null },
   lastConsoleId: null
 };
 
@@ -822,6 +823,43 @@ function tabConfig(inst) {
   </div>`;
 }
 
+function updateCard() {
+  const u = state.update || { status: 'idle' };
+  const cur = state.appInfo.version || u.current || '';
+  // every reason spelled out, so the i18n checker sees plain keys
+  const offKey = { dev: 'update.disabled.dev', store: 'update.disabled.store', itch: 'update.disabled.itch', missing: 'update.disabled.missing' };
+  const lines = {
+    idle: t('update.idle'),
+    checking: t('update.checking'),
+    uptodate: t('update.uptodate'),
+    available: t('update.available', { v: u.available || '' }),
+    downloading: t('update.downloading', { p: u.percent || 0 }),
+    ready: t('update.ready', { v: u.available || '' }),
+    error: t('update.error', { msg: u.error || '' }),
+    disabled: t(offKey[u.reason] || 'update.disabled.dev')
+  }[u.status] || t('update.idle');
+
+  const busyDown = u.status === 'downloading';
+  return `<div class="card" id="update-card">
+    <h3>${esc(t('update.title'))}</h3>
+    <table>
+      <tr><td>${esc(t('update.installed'))}</td><td class="mono">${esc(cur)}</td></tr>
+      <tr><td>${esc(t('update.status'))}</td><td data-update-status="${esc(u.status)}">${esc(lines)}</td></tr>
+    </table>
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-sm" data-action="update-check" ${u.status === 'disabled' || u.status === 'checking' || busyDown ? 'disabled' : ''}>${esc(t('update.checkBtn'))}</button>
+      ${u.status === 'available'
+        ? `<button class="btn btn-sm btn-primary" data-action="update-download">${esc(t('update.downloadBtn'))}</button>` : ''}
+      ${u.status === 'ready'
+        ? `<button class="btn btn-sm btn-primary" data-action="update-install">${esc(t('update.installBtn'))}</button>` : ''}
+      ${u.releaseUrl || u.status === 'available' || u.status === 'ready'
+        ? `<button class="btn btn-sm btn-ghost" data-action="open-external" data-url="${esc(u.releaseUrl || 'https://github.com/lelewithheart/mcserversmith/releases/latest')}">${esc(t('update.notes'))}</button>` : ''}
+    </div>
+    ${busyDown ? `<div class="progress" style="margin-top:10px"><div style="width:${Number(u.percent) || 0}%"></div></div>` : ''}
+    <p class="muted small" style="margin-top:10px">${esc(t('update.channelNote'))}</p>
+  </div>`;
+}
+
 function viewSettings() {
   const s = state.settings;
   return `<div class="grid cols-2">
@@ -839,6 +877,7 @@ function viewSettings() {
       <label class="check"><input type="checkbox" data-setting="showPublicIp" ${s.showPublicIp ? 'checked' : ''} /><span>${esc(t('settings.showPublicIp'))}</span></label>
       <p class="muted small" style="margin-top:10px">${esc(t('settings.privacyNote'))}</p>
     </div>
+    ${updateCard()}
     <div class="card">
       <h3>${esc(t('settings.newDefaults'))}</h3>
       <label class="field"><span>${esc(t('settings.defaultProvider'))}</span>
@@ -2224,6 +2263,22 @@ const actions = {
     refreshJava();
   },
   'refresh-java': () => refreshJava(),
+  // ------------------------------------------------------------- updates ---
+  'update-check': async () => {
+    try {
+      state.update = await call(api.updater.check()) || state.update;
+    } catch (err) { notifyError(err); }
+    rerender({ force: true });
+  },
+  'update-download': async () => {
+    try {
+      state.update = await call(api.updater.download()) || state.update;
+    } catch (err) { notifyError(err); }
+    rerender({ force: true });
+  },
+  'update-install': async () => {
+    try { await call(api.updater.install()); } catch (err) { notifyError(err); }
+  },
   'save-props': async (el) => {
     const patch = {};
     for (const input of $$('[data-prop]')) {
@@ -2669,6 +2724,15 @@ async function boot() {
     state.settings = await call(api.app.getSettings()) || {};
     state.fallback = {};
     try { state.fallback = await call(api.i18n.get('en')) || {}; } catch { /* ignore */ }
+    state.update = await call(api.updater.state()) || { status: 'idle' };
+    api.updater.onState((s) => {
+      const was = state.update && state.update.status;
+      state.update = s || { status: 'idle' };
+      if (s && s.status === 'ready' && was !== 'ready') {
+        toast(t('update.readyToast', { v: s.available || '' }), 'success', 9000);
+      }
+      rerender({ force: false });
+    });
     await loadAll();
     refreshJava();
   } catch (err) {

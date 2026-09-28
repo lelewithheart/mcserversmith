@@ -73,10 +73,15 @@ Requirements: Node 20+. Everything else the app needs, it downloads itself.
 ```bash
 npm run test:headless        # downloads Paper 1.21.4 + Java 21, starts it, pings it, stops it
 npm run test:providers       # hits every upstream API and resolves a real artifact per type
+npm run test:plugins         # Modrinth + Hangar: search -> versions -> download -> verify, all 8 server types
+npm run test:updater         # drives the real update feed from inside Electron
 npm run test:license         # mints real keys and checks the gating
 npm run test:backup          # backup + restore + retention against a real instance
-npm run test:ui              # drives the real UI (wizard, views, language switch) and reports
+npm run test:ui              # drives the real UI (wizard, views, plugins, settings) and reports
 npm run check:i18n           # translation completeness
+npm run check:state          # every renderer state cache is declared
+npm run check:update         # the release feed carries what the updater needs
+npm run inspect:asar         # what is inside a packaged app.asar (deps, leaks)
 ```
 
 `test:headless` flags: `--mc=26.3`, `--provider=fabric|forge|...`, `--memory=1024`, `--port=25599`, `--keep`, `--data=<dir>`.
@@ -105,6 +110,45 @@ does both on tags (`git tag v0.1.0 && git push --tags`).
 
 Windows SmartScreen will warn about an unsigned build. That is unavoidable without a
 code-signing certificate; set `CSC_LINK` / `CSC_KEY_PASSWORD` in CI to fix it.
+
+### Updates
+
+The packaged app updates itself from this repository's GitHub releases
+(`electron-updater`, feed = the release assets, `latest.yml` + `latest-linux.yml`).
+On start it checks, downloads a newer build in the background and installs it on the
+next quit; Settings → Updates shows the state and has a manual "Check now". The
+"Check for updates" switch turns the automatic start-up check off.
+
+Some channels must **not** self-update — they update their own copies: Microsoft Store,
+Flathub, Snap, winget/Scoop/Chocolatey (set `MCSERVERSMITH_STORE=1` in those builds) and
+the itch **desktop app** (detected from the install path; the itch client updates it).
+
+What a release needs to keep working: the tag has to match `package.json`, and
+`latest.yml` / `latest-linux.yml` must be attached to the release — both happen
+automatically in `.github/workflows/build.yml`, and `npm run check:update` fails loudly
+if a release is missing them.
+
+### itch.io
+
+Every tag is pushed to itch.io with [butler](https://itchio.itch.io/butler) — one
+channel per platform, so the itch app can install and update it:
+
+```bash
+npm run dist:win && npm run dist:linux   # or let CI build both
+npm run publish:itch -- --status         # what is on itch right now
+npm run publish:itch                     # windows + linux channels
+npm run publish:itch -- --all            # + windows-arm64 + linux-deb
+npm run publish:itch -- --dry-run        # print the commands only
+```
+
+Auth is `butler login` once (`butler` lives at `~/bin/butler.exe` on Windows,
+`~/.local/bin/butler` elsewhere), or `BUTLER_API_KEY` in CI. The target comes from
+`--target=<user>/<game>`, `MCSERVERSMITH_ITCH_TARGET`, or a local `private/itch.json`
+(`{ "target": "user/game" }` — `private/` is git-ignored).
+
+In CI the push happens in the release job and is **skipped, not failed**, while
+`BUTLER_API_KEY` (secret) or `MCSERVERSMITH_ITCH_TARGET` (repository variable) is
+missing, so a release never blocks on a channel that is not set up yet.
 
 ---
 

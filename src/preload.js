@@ -145,6 +145,17 @@ const api = {
     const listener = (_e, payload) => cb(payload);
     ipcRenderer.on('files-dropped', listener);
     return () => ipcRenderer.removeListener('files-dropped', listener);
+  },
+  updater: {
+    state: () => invoke('updater:state'),
+    check: () => invoke('updater:check'),
+    download: () => invoke('updater:download'),
+    install: () => invoke('updater:install'),
+    onState: (cb) => {
+      const listener = (_e, payload) => cb(payload);
+      ipcRenderer.on('update-event', listener);
+      return () => ipcRenderer.removeListener('update-event', listener);
+    }
   }
 };
 

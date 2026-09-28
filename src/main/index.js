@@ -13,6 +13,7 @@ const { ensureDirs, getDirs } = require('./core/paths');
 const { createLogger, setLogSink, getLogRing, which } = require('./core/util');
 const settings = require('./core/settings');
 const { ServerManager } = require('./servers/manager');
+const updater = require('./core/updater');
 
 const log = createLogger('app');
 
@@ -114,10 +115,6 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
-  // TEMP DIAG
-  mainWindow.on('close', () => log.warn('DIAG window close'));
-  mainWindow.on('closed', () => log.warn('DIAG window closed'));
-  mainWindow.webContents.on('destroyed', () => log.warn('DIAG webContents destroyed'));
   return mainWindow;
 }
 
@@ -348,6 +345,14 @@ app.whenReady().then(async () => {
   createTray();
   buildMenu();
 
+  // Self-update (GitHub Releases feed). Off in a dev run and in the channels that
+  // update themselves — the Settings tab shows which of the two it is.
+  updater.init({
+    onState: (s) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-event', s);
+    }
+  });
+
   if (isSmoke) {
     // automated UI check — drives the renderer, prints a report, exits
     log.info('smoke mode: driving the UI…');
@@ -372,6 +377,23 @@ app.whenReady().then(async () => {
         log.error(`smoke test crashed: ${err.stack || err.message}`);
         app.exit(3);
       });
+  } else if (process.env.MCSERVERSMITH_TEST_UPDATER === '1') {
+    // self-update test — drives the real release feed, prints a report, exits
+    log.info('updater test mode: checking the release feed…');
+    require('./updater-test').run({ window: mainWindow })
+      .then((code) => {
+        log.info(`updater test finished with code ${code}`);
+        manager.stopPolling();
+        quitting = true;
+        app.exit(code);
+      })
+      .catch((err) => {
+        log.error(`updater test crashed: ${err.stack || err.message}`);
+        app.exit(3);
+      });
+  } else {
+    // normal start: look for an update in the background, if the user wants it
+    updater.scheduleAutoCheck();
   }
 
   log.info(`MCServerSmith ${require('../../package.json').version} started (${process.platform}/${process.arch})`);
@@ -387,17 +409,11 @@ app.whenReady().then(async () => {
 
 // keep running in the tray when all windows are closed
 app.on('window-all-closed', () => {
-  log.warn('DIAG window-all-closed');
   if (!settings.get('closeToTray', true)) {
     quitting = true;
     app.quit();
   }
 });
-
-// TEMP DIAG
-app.on('before-quit', () => log.warn('DIAG before-quit'));
-app.on('will-quit', () => log.warn('DIAG will-quit'));
-app.on('quit', (_e, code) => log.warn(`DIAG quit code=${code}`));
 
 process.on('uncaughtException', (err) => {
   log.error(`uncaught: ${err.stack || err.message}`);

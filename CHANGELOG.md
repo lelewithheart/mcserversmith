@@ -3,13 +3,50 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
-## [0.4.1] — 2026-09-28
+## [1.0.0] — 2026-09-28
 
-Two reported defects — the server settings tab and the plugin browser — plus one that
-the tests found on the way. All of them shared a theme: the app said nothing while
-doing nothing, and the errors it did throw were swallowed.
+**The first release that does everything the app claims.** It is also the release that
+makes itself updatable: the app now checks the GitHub release feed, downloads a newer
+build in the background and installs it on the next restart — and every release is
+pushed to itch.io automatically.
+
+Two reported defects, one the tests found on the way, and three that the release work
+exposed. They shared a theme: the app said nothing while doing nothing, and the errors
+it did throw were swallowed.
+
+### Added
+- **A real updater.** `electron-updater` against this repo's GitHub releases: the
+  Settings tab has an Updates card (installed version, status, "Check now",
+  download, "Restart and install"), the check runs in the background on start when
+  "Check for updates" is on, a finished download installs on the next quit, and the
+  card states *why* a build cannot self-update instead of showing a dead switch.
+  Store, Flathub/Snap, winget/Scoop and itch-app installations stay off — those
+  channels update their own copies (`MCSERVERSMITH_STORE=1` for managed builds, path
+  detection for itch).
+- **itch.io as a distribution channel.** `tools/itch-publish.js` + `npm run
+  publish:itch` push the built artifacts with butler (one channel each: `windows`,
+  `linux`, optionally `windows-arm64`, `linux-deb`), and the release job does the
+  same automatically on every tag as soon as the `BUTLER_API_KEY` secret exists —
+  no manual upload step in the delivery path.
+- `npm run test:updater` — drives the real feed from inside Electron: version maths,
+  the "update available" branch with a faked old version, the artifact chosen for
+  this platform, and the start of a real download.
+- `npm run check:update` — the same contract without Electron (CI-safe): version
+  comparison, channel policy, and does the newest release actually carry `latest.yml`
+  plus both platforms' artifacts.
+- `npm run inspect:asar` — lists what is inside a packaged `app.asar` and compares it
+  against the runtime dependencies in `package.json`. This is what caught the bug below.
+- `node tools/run-ui-test.js --packaged` — the same UI smoke test against
+  `dist/win-unpacked/MCServerSmith.exe`, so an asar-only bug cannot slip through.
 
 ### Fixed
+- **The packaged app would have shipped without its updater.** electron-builder's
+  `files` list *replaces* the default `**/*`, and the list did not include
+  `node_modules` — so `app.asar` had no `electron-updater` at all. In a packaged
+  build the updater is the active one, so the first installer would have started
+  broken. `node_modules/**/*` is now listed, `tools/inspect-asar.js` proves it is in
+  the archive, and a missing module degrades with an explanation instead of throwing
+  during startup.
 - **The plugin browser works again — all three layers of it.** Plugin search answered
   `HTTP 400 … failed to parse facets … found ","` for every server whose loader list
   has more than one entry: the Modrinth facet groups joined the tags
@@ -61,7 +98,7 @@ doing nothing, and the errors it did throw were swallowed.
   list — a project that only lists patch releases (1.21.4) stays findable from a
   server pinned to "1.21".
 
-### Added
+### Added (tests and guards)
 - `npm run check:state` (`tools/check-state.js`, also in CI): every `state.<key>`
   the renderer touches must exist in the state literal — the exact bug above, with
   write-into-undefined reported separately from a plain read.
@@ -74,20 +111,29 @@ doing nothing, and the errors it did throw were swallowed.
   screenshot (`ui-<name>.png`): `wizard` for step 1, or any tab name.
 
 ### Verified
-- `npm run test:ui` — **134/134** (was 113). New coverage: the settings tab really
-  switches and loads `server.properties`, the motd field is filled in, `online-mode`
-  shows the effective (checked) value, ticking a checkbox writes the file with no
-  error toast, computed WCAG contrast for the flavour cards (13.09:1 and 9.77:1,
-  and 1.32:1 with the fix reverted) — and the whole plugin flow through the UI:
-  Modrinth search, version list, install (a real 5.7 MB download lands in
-  `plugins/`, verified against the published checksum), remove, then the same for
-  Hangar with its `hangarcdn` URL and sha256.
-- `npm run test:plugins` — **26/26** against the live APIs.
+- `npm run test:ui` — **140/140**, in the dev run *and* against the packaged build
+  (`node tools/run-ui-test.js --packaged`). New coverage: the settings tab really
+  switches and loads `server.properties`, the motd
+  field is filled in, `online-mode` shows the effective (checked) value, ticking a
+  checkbox writes the file with no error toast, computed WCAG contrast for the
+  flavour cards (13.09:1 and 9.77:1, and 1.32:1 with the fix reverted), the whole
+  plugin flow through the UI (Modrinth search → versions → a real 5.7 MB install
+  into `plugins/` verified against the published checksum → remove, then the same
+  for Hangar), and the Updates card with a "Check now" that reaches the main
+  process — in the packaged build it reaches `uptodate` against the live feed, in a
+  dev run it reports `disabled/dev` and says so in the card.
+- `npm run test:updater` — 14/14 + 12/12 (two Electron passes against the live
+  feed: faked old version → real download starts at ~1.4 MB/s; real version → the
+  feed answers and the state settles).
+- `npm run check:update` — 16/16.
+- `npm run test:plugins` — 26/26 against the live APIs.
+- `npm run test:headless` — 27/27 (real Paper download, own JVM, start, ping,
+  graceful stop).
 - `npm run check:state` fails with the four write sites when `props` is removed
   again — verified against a mutated copy of the renderer.
 - Screenshots of the wizard step 1 and of the plugin browser after a Hangar search
   were checked by eye.
-- The smoke harness now runs with its own `--user-data-dir`: with the installed app
+- The smoke harness runs with its own `--user-data-dir`: with the installed app
   open, the old harness lost the single-instance lock and quit with **code 0 in two
   seconds, printing nothing**, which reads exactly like a pass. A smoke run that
   cannot take the lock now exits 3 with an explanation.

@@ -7,6 +7,12 @@ directories:
   buildResources: resources
 
 files:
+  # NOTE: a `files` list REPLACES electron-builder's default `**/*`, so the
+  # production dependencies have to be listed explicitly — without this line the
+  # asar contains no node_modules, a packaged app cannot require
+  # electron-updater and the updater (active in packaged builds) breaks startup.
+  # tools/inspect-asar.js is what proves it is in there.
+  - node_modules/**/*
   - src/**/*.js
   - src/renderer/index.html
   - src/renderer/styles.css
@@ -17,6 +23,8 @@ files:
   - LICENSE
   - "!**/*.md"
   - "!**/*.map"
+  - "!**/{test,tests,__tests__,docs,example,examples,spec,specs}/**"
+  - "!**/.github/**"
   - "!tools/**"
   - "!keys/**"
 

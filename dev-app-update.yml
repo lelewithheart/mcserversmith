@@ -1,0 +1,7 @@
+# Only used by an UNPACKAGED run (tools/test-updater.js with MCSERVERSMITH_UPDATE_DEV=1),
+# so the updater code path can be exercised against the real release feed before a
+# new version exists. A packaged build gets the generated resources/app-update.yml
+# from electron-builder instead — never edit that one.
+provider: github
+owner: lelewithheart
+repo: mcserversmith

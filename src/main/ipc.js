@@ -27,6 +27,7 @@ const tunnel = require('./net/tunnel');
 const javaruntime = require('./java/runtime');
 const license = require('./licensing/license');
 const monetize = require('./licensing/monetize');
+const updater = require('./core/updater');
 const { getDirs: dirs } = require('./core/paths');
 
 const log = createLogger('ipc');
@@ -224,6 +225,13 @@ function register({ ipcMain, manager, shell, dialog, app, getWindow }) {
   ipcMain.handle(`${M}:monetize:dismiss`, wrap(({ kind }) => monetize.dismiss(kind)));
 
   // ------------------------------------------------------------- i18n -----
+  // ------------------------------------------------------------------ update
+  ipcMain.handle(`${M}:updater:state`, wrap(() => updater.snapshot()));
+  ipcMain.handle(`${M}:updater:check`, wrap(() => updater.check()));
+  ipcMain.handle(`${M}:updater:download`, wrap(() => updater.download()));
+  ipcMain.handle(`${M}:updater:install`, wrap(() => updater.install()));
+
+  // ------------------------------------------------------------------ i18n ---
   ipcMain.handle(`${M}:i18n:list`, wrap(() => {
     const dirsToScan = [BUNDLED_LOCALES, getDirs().locales];
     const out = [];
