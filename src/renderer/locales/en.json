@@ -4,7 +4,6 @@
     "name": "English",
     "note": "Translation template. Copy this file, translate the values, keep the keys. Drop it into the app's locales folder or use Settings → Translations → Import. Community translations are welcome."
   },
-
   "nav.newServer": "New server",
   "nav.noServers": "No servers yet",
   "nav.settings": "Settings",
@@ -12,11 +11,9 @@
   "nav.cloud": "24/7 hosting",
   "nav.license": "Supporter",
   "nav.servers": "Servers",
-
   "common.loading": "Loading…",
   "common.ok": "OK",
   "common.cancel": "Cancel",
-
   "welcome.title": "Your own Minecraft server, in about a minute",
   "welcome.subtitle": "Pick a version, pick a flavour, hit start. MCServerSmith downloads the server files and the exact Java runtime it needs — no terminal, no wiki pages, no port forwarding.",
   "welcome.cta": "Create your first server",
@@ -28,7 +25,6 @@
   "welcome.f3.body": "Players online, connection address, live console, TPS, RAM and CPU of the server process, world size, backups and a plugin browser — all in one window.",
   "welcome.f4.title": "Supporter features",
   "welcome.f4.body": "The app is free and stays free. A one-time supporter key adds scheduled restarts, automatic backups, crash auto-restart and the tunnel feature.",
-
   "wizard.title": "Create a server",
   "wizard.step1": "Step 1 of 4 — Name and server type",
   "wizard.step2": "Step 2 of 4 — Version and loader",
@@ -55,7 +51,6 @@
   "wizard.experimental": "Allow experimental/alpha builds",
   "wizard.createAndInstall": "Create and install",
   "wizard.created": "Server created — installing now",
-
   "type.vanilla.desc": "Official Mojang server. Most stable, no plugins, no optimisations.",
   "type.paper.desc": "Best default for survival and plugin servers: fast, well optimised, huge plugin ecosystem.",
   "type.purpur.desc": "Paper fork with tons of gameplay toggles. Great if you want to tune everything.",
@@ -65,13 +60,11 @@
   "type.neoforge.desc": "Modern Forge fork, the default for Minecraft 1.20.2+ modpacks.",
   "type.spigot.desc": "The original plugin server. Still works, but Paper is faster and much easier to install.",
   "type.velocity.desc": "Proxy server to link several backend servers behind one address. Not a game server itself.",
-
   "state.offline": "offline",
   "state.starting": "starting",
   "state.online": "online",
   "state.stopping": "stopping",
   "state.crashed": "crashed",
-
   "action.start": "Start",
   "action.stop": "Stop",
   "action.restart": "Restart",
@@ -84,7 +77,6 @@
   "action.cancel": "Cancel",
   "action.back": "Back",
   "action.next": "Next",
-
   "tab.overview": "Overview",
   "tab.console": "Console",
   "tab.players": "Players",
@@ -93,17 +85,14 @@
   "tab.backups": "Backups",
   "tab.network": "Network",
   "tab.config": "Configuration",
-
   "stat.status": "Status",
   "stat.players": "Players",
   "stat.uptime": "Uptime",
   "stat.address": "Join address",
   "stat.port": "port",
-
   "install.title": "Installing",
   "install.inProgress": "Installation running…",
   "install.done": "Installation finished — you can start the server now",
-
   "overview.resources": "Resources",
   "overview.details": "Details",
   "overview.serverType": "Server type",
@@ -112,20 +101,17 @@
   "overview.lastBackup": "Last backup",
   "overview.worldSize": "World size on disk",
   "overview.latency": "Ping",
-
   "console.filter": "Filter output…",
   "console.autoscroll": "Auto-scroll",
   "console.clear": "Clear",
   "console.send": "Send",
   "console.placeholder": "Type a command (e.g. list, op Notch, say hello)",
   "console.hint": "Commands go straight into the server console. Admins, world edits and plugins all work through this box.",
-
   "players.online": "Players online",
   "players.none": "Nobody is online right now.",
   "players.actions": "Manage players",
   "players.name": "Player name",
   "players.hint": "The player list comes from the server query/RCON interface. Names may take a few seconds to appear after a login.",
-
   "addons.search": "Search plugins and mods…",
   "addons.searchBtn": "Search",
   "addons.hint": "Results are filtered for Minecraft {v} and this server type. Modrinth and Hangar are open APIs; SpigotMC has no API, so it is not offered.",
@@ -135,7 +121,6 @@
   "addons.installed": "Installed",
   "addons.installedOne": "Installed",
   "addons.none": "Nothing installed yet. Addons are downloaded straight into the server folder.",
-
   "backups.title": "Backups",
   "backups.create": "Create backup",
   "backups.none": "No backups yet.",
@@ -145,12 +130,10 @@
   "backups.autoEnabled": "Back up automatically while the server runs",
   "backups.interval": "Every (hours)",
   "backups.keep": "Keep newest",
-  "backups.gated": "Automatic backups with retention are a supporter feature. Manual backups are always free.",
   "backups.started": "Backup started…",
   "backups.done": "Backup finished",
   "backups.restored": "Backup restored",
   "backups.restoreConfirm": "Restore this backup? The current world will be replaced. The server must be stopped.",
-
   "network.address": "Connection",
   "network.local": "In your network",
   "network.public": "From the internet",
@@ -167,9 +150,7 @@
   "network.tunnelUp": "Tunnel is up",
   "network.tunnelDown": "Tunnel stopped",
   "network.tunnelStarting": "starting…",
-  "network.gated": "Tunnels are a supporter feature: they make your server reachable without any router setup.",
   "network.ipWarning": "Note: through a plain TCP tunnel every player appears to come from the tunnel host, so IP bans and IP-based plugins see one address. frp can preserve real IPs with PROXY protocol, which needs the HAProxyDetector plugin on the server.",
-
   "tunnel.none": "None (local network only)",
   "tunnel.frp": "frp — your own relay",
   "tunnel.playit": "playit.gg agent",
@@ -183,7 +164,6 @@
   "tunnel.playitPath": "Path to the playit agent binary",
   "tunnel.customCommand": "Command to run",
   "tunnel.customRegex": "Regex that captures the public address",
-
   "config.title": "server.properties",
   "config.hint": "These values go straight into server.properties. Restart the server for changes to take effect.",
   "config.notGenerated": "server.properties does not exist yet — the values shown are Minecraft's defaults and are written the first time you save or start the server.",
@@ -196,7 +176,6 @@
   "config.reinstall": "Reinstall server files",
   "config.reinstallHint": "Reinstalling re-downloads the server jar and keeps your world. Use it after changing the version or if the jar got damaged.",
   "config.reinstallConfirm": "Reinstall the server files? Your world and settings are kept.",
-
   "settings.title": "Settings",
   "settings.subtitle": "Application preferences",
   "settings.general": "General",
@@ -307,13 +286,11 @@
   "settings.platform": "Platform",
   "settings.diagnostics": "Diagnostics",
   "settings.openAppLog": "Open app log",
-
   "runtimes.title": "Java runtimes",
   "runtimes.subtitle": "Downloaded once, shared by every server",
   "runtimes.hint": "MCServerSmith installs only the Java versions your servers actually need. They live in the data folder and are reused by all servers.",
   "runtimes.none": "No runtimes installed yet — they arrive with the first server.",
   "runtimes.done": "ready",
-
   "cloud.title": "Run it 24/7 in the cloud",
   "cloud.subtitle": "For when your PC should not have to stay on",
   "cloud.intro": "A local server only runs while your computer runs. A small cloud machine (from about the price of a coffee per month) keeps it online around the clock — and you keep using this same dashboard.",
@@ -322,7 +299,6 @@
   "cloud.howto": "How it works: rent the smallest VPS, install Java, upload your server folder, done. The same instance files you have here run there unchanged.",
   "cloud.selfHost": "Prefer to build the whole thing yourself?",
   "cloud.selfHostBody": "Every piece this app uses is open: Modrinth/Hangar for addons, Adoptium for Java, frp for tunnels. If you want to run your own relay (and hand out your own player addresses later), start with a cheap VPS and frp — the tunnel tab already speaks to it.",
-
   "license.title": "Supporter",
   "license.subtitle": "Optional — the app is free",
   "license.current": "Your licence",
@@ -343,35 +319,56 @@
   "license.pro.2": "Scheduled restarts (e.g. nightly at 04:00) with a backup first",
   "license.pro.3": "Automatic interval backups with retention",
   "license.pro.4": "Crash watchdog: restart automatically",
-  "license.pro.5": "MOTD and icon quick tools",
   "license.buy": "Get a key",
   "license.cta": "Get a supporter key",
   "license.howtoBtn": "How do I get a key?",
   "license.howtoTitle": "Getting a supporter key",
-  "license.howtoBody": "The developer has not connected a shop link to this build yet.\n\nWhen they do, keys are sold through any hosted checkout (Gumroad, Lemon Squeezy, Ko-fi, …) and delivered as a text string you paste here. Verification happens offline, so no account is needed.",
+  "license.howtoBody": "Keys are sold through the itch.io page. After paying, mail your hardware ID (shown below under Licence) together with your proof of purchase to the address in the app — you get a key that is locked to your machine. Verification is offline: no account, no server, no telemetry.",
   "license.sellTitle": "For the operator of this build",
   "license.sellBody": "Mint keys offline with:  node tools/keygen.js --keygen  (once), then  node tools/keygen.js --mint --tier supporter\n\nSell them anywhere that can deliver a text line — Gumroad, Lemon Squeezy, Ko-fi, Discord, a manual invoice. No website, no server, no VAT handling in the app. Paste the printed public key into src/main/licensing/license.js and rebuild.",
-
   "upsell.cta": "Show me",
   "upsell.cloud.headline": "Keep it online 24/7",
   "upsell.cloud.body": "Your server is running off your own PC. A small cloud box keeps it online while you sleep.",
   "upsell.tunnel.headline": "Play together without port forwarding",
   "upsell.tunnel.body": "Open a tunnel so friends can join through a simple address.",
-
   "eula.notice": "Minecraft requires you to accept the Mojang EULA before a server can run. This only sets eula=true in eula.txt.",
   "eula.accept": "I accept the EULA",
   "eula.acceptLong": "I accept the Minecraft EULA",
   "eula.accepted": "EULA accepted",
   "eula.read": "Read the EULA",
-
   "confirm.delete": "Delete \"{name}\"? The world, plugins and all backups will be removed from disk.",
   "confirm.deleteGeneric": "Are you sure?",
-
   "toast.starting": "Starting server…",
   "toast.stopped": "Server stopped",
   "toast.killed": "Server process killed",
   "toast.saved": "Saved",
   "toast.deleted": "Server deleted",
   "toast.copied": "Copied to clipboard",
-  "toast.copyFailed": "Could not copy"
+  "toast.copyFailed": "Could not copy",
+  "lock.title": "Supporter feature",
+  "lock.tooltip": "Needs a supporter key — Settings → Licence shows how to get one",
+  "lock.generic": "this control needs a supporter key",
+  "lock.supporterExplains": "Greyed out until a supporter key is activated.",
+  "lock.cloudExplains": "Belongs to the Cloud tier.",
+  "feature.tunnel": "Tunnel: play together without port forwarding",
+  "feature.autoRestart": "Crash watchdog: restart a crashed server automatically",
+  "feature.scheduledRestarts": "Scheduled restarts (e.g. 04:00) with a backup first",
+  "feature.autoBackups": "Interval backups with retention",
+  "feature.cloudHosting": "Cloud hosting",
+  "license.freeTier": "Free",
+  "license.cloudTier": "Cloud",
+  "license.cloudRow": "Cloud hosting (in preparation)",
+  "license.unbound": "any machine",
+  "license.hw.title": "This machine's hardware ID",
+  "license.hw.copy": "Copy",
+  "license.hw.body": "A supporter key can be locked to this ID, so it works on this machine only and cannot be passed on. The ID is a one-way hash of a system value — it reveals nothing else about the machine.",
+  "license.hw.weak": "Warning: no stable hardware identifier could be read on this system. The ID falls back to hostname and user here, and changes if the machine is renamed.",
+  "license.hw.step1": "Pay for the supporter edition (link on the itch.io page).",
+  "license.hw.step2": "Copy the hardware ID above.",
+  "license.hw.step3": "Mail that ID together with your proof of purchase to {mail}.",
+  "license.hw.step4": "Paste the key you get back under Activate key. Done — no account, no server.",
+  "license.hw.mail": "Request a key (opens your mail app)",
+  "license.hw.mailSubject": "MCServerSmith supporter key",
+  "license.hw.mailBody": "Hello,\n\nI paid for the supporter edition.\n\nHardware ID: {id}\nProof of purchase: (order number / attached)\n\nThanks!",
+  "license.hw.noMail": "No support address is configured in this build."
 }

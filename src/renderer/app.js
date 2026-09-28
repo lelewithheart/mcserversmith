@@ -395,6 +395,50 @@ function afterContentPaint() {
   if (state.tab === 'files') applyFilesFilter();
 }
 
+// ------------------------------------------------------- supporter gating ---
+// The tier features mirror src/main/licensing/license.js. A gated control is shown
+// locked (badge + disabled + tooltip) instead of looking normal and failing with an
+// error toast after the click — the user should see what a key unlocks *before*
+// they use it.
+const FEATURES = {
+  tunnel: { label: 'feature.tunnel', tier: 'supporter' },
+  autoRestart: { label: 'feature.autoRestart', tier: 'supporter' },
+  scheduledRestarts: { label: 'feature.scheduledRestarts', tier: 'supporter' },
+  autoBackups: { label: 'feature.autoBackups', tier: 'supporter' },
+  cloudHosting: { label: 'feature.cloudHosting', tier: 'cloud' }
+};
+
+function hasFeature(name) {
+  return !!(state.license && (state.license.features || []).includes(name));
+}
+function isCloudTier(name) {
+  return !!(FEATURES[name] && FEATURES[name].tier === 'cloud');
+}
+/** "🔒 Supporter" badge for a locked feature, empty when it is unlocked. */
+function lockTag(name) {
+  if (hasFeature(name)) return '';
+  const cloud = isCloudTier(name);
+  return `<span class="lock-badge${cloud ? ' cloud' : ''}" data-locked="${esc(name)}" title="${esc(t('lock.tooltip'))}">🔒 ${esc(t(cloud ? 'license.cloudTier' : 'license.supporter'))}</span>`;
+}
+/** disabled + marker for a control that needs the feature */
+function lockedAttr(name) {
+  return hasFeature(name) ? '' : 'disabled data-locked-control="' + esc(name) + '"';
+}
+/** wrapper class so whole rows/fields can be greyed out */
+function lockedClass(name) {
+  return hasFeature(name) ? '' : ' locked-row';
+}
+/** The box that explains a lock and links to the licence tab. */
+function lockNote(name) {
+  if (hasFeature(name)) return '';
+  const cloud = isCloudTier(name);
+  return `<div class="hint-box gold" data-locked-note="${esc(name)}">
+    <strong>${esc(t('lock.title'))}</strong> — ${esc(t(FEATURES[name] ? FEATURES[name].label : 'lock.generic'))}
+    ${esc(t(cloud ? 'lock.cloudExplains' : 'lock.supporterExplains'))}
+    <button class="btn btn-sm btn-primary" style="margin-left:8px" data-action="goto" data-view="license">${esc(t('license.cta'))}</button>
+  </div>`;
+}
+
 // ---------------------------------------------------------------- views
 function viewWelcome() {
   const paid = state.license.tier !== 'free';
@@ -676,17 +720,16 @@ function tabBackups(inst) {
       : `<div class="muted small">${esc(t('backups.none'))}</div>`}
   </div>
   <div class="card">
-    <h3>${esc(t('backups.auto'))}</h3>
-    <label class="check"><input type="checkbox" data-action="set-backup-enabled" data-id="${esc(inst.id)}" ${b.enabled ? 'checked' : ''} />
+    <h3>${esc(t('backups.auto'))}${lockTag('autoBackups')}</h3>
+    <label class="check${lockedClass('autoBackups')}"><input type="checkbox" data-action="set-backup-enabled" data-id="${esc(inst.id)}" ${b.enabled ? 'checked' : ''} ${lockedAttr('autoBackups')} />
       <span>${esc(t('backups.autoEnabled'))}</span></label>
-    <div class="grid cols-2">
+    <div class="grid cols-2${lockedClass('autoBackups')}">
       <label class="field"><span>${esc(t('backups.interval'))}</span>
-        <input type="number" min="1" max="72" value="${b.intervalHours || 6}" data-action="set-backup-interval" data-id="${esc(inst.id)}" /></label>
+        <input type="number" min="1" max="72" value="${b.intervalHours || 6}" data-action="set-backup-interval" data-id="${esc(inst.id)}" ${lockedAttr('autoBackups')} /></label>
       <label class="field"><span>${esc(t('backups.keep'))}</span>
-        <input type="number" min="1" max="50" value="${b.keep || 7}" data-action="set-backup-keep" data-id="${esc(inst.id)}" /></label>
+        <input type="number" min="1" max="50" value="${b.keep || 7}" data-action="set-backup-keep" data-id="${esc(inst.id)}" ${lockedAttr('autoBackups')} /></label>
     </div>
-    ${state.license.tier === 'free' ? `<div class="hint-box gold">${esc(t('backups.gated'))}
-      <button class="btn btn-sm btn-primary" style="margin-left:8px" data-action="goto" data-view="license">${esc(t('license.cta'))}</button></div>` : ''}
+    ${lockNote('autoBackups')}
   </div>`;
 }
 
@@ -709,9 +752,9 @@ function tabNetwork(inst, st) {
       </div>
     </div>
     <div class="card">
-      <h3>${esc(t('network.tunnel'))}</h3>
+      <h3>${esc(t('network.tunnel'))}${lockTag('tunnel')}</h3>
       <label class="field"><span>${esc(t('network.provider'))}</span>
-        <select id="tunnel-provider" class="select" data-action="tunnel-provider">
+        <select id="tunnel-provider" class="select" data-action="tunnel-provider" ${lockedAttr('tunnel')}>
           ${['none', 'frp', 'playit', 'custom'].map((p) => `<option value="${p}" ${t2.provider === p ? 'selected' : ''}>${esc(t(`tunnel.${p}`))}</option>`).join('')}
         </select></label>
       <div id="tunnel-fields">
@@ -733,15 +776,14 @@ function tabNetwork(inst, st) {
           <label class="field"><span>${esc(t('tunnel.customRegex'))}</span><input type="text" value="${esc(t2.customRegex || '')}" data-tunnel="customRegex" /></label>` : ''}
       </div>
       <div class="row" style="margin-top:10px">
-        <button class="btn btn-sm" data-action="tunnel-save" data-id="${esc(inst.id)}">${esc(t('action.save'))}</button>
-        <button class="btn btn-sm btn-primary" data-action="tunnel-start" data-id="${esc(inst.id)}">${esc(t('network.tunnelStart'))}</button>
-        <button class="btn btn-sm" data-action="tunnel-stop" data-id="${esc(inst.id)}">${esc(t('network.tunnelStop'))}</button>
+        <button class="btn btn-sm" data-action="tunnel-save" data-id="${esc(inst.id)}" ${lockedAttr('tunnel')}>${esc(t('action.save'))}</button>
+        <button class="btn btn-sm btn-primary" data-action="tunnel-start" data-id="${esc(inst.id)}" ${lockedAttr('tunnel')}>${esc(t('network.tunnelStart'))}</button>
+        <button class="btn btn-sm" data-action="tunnel-stop" data-id="${esc(inst.id)}" ${lockedAttr('tunnel')}>${esc(t('network.tunnelStop'))}</button>
       </div>
       ${running.running ? `<div class="hint-box" style="margin-top:10px">
         <strong>${esc(running.provider)}</strong> — ${esc(running.address || t('network.tunnelStarting'))}
         ${running.tail ? `<pre class="mono small" style="margin:8px 0 0;white-space:pre-wrap">${esc(running.tail.join('\n'))}</pre>` : ''}</div>` : ''}
-      ${state.license.tier === 'free' ? `<div class="hint-box gold">${esc(t('network.gated'))}
-        <button class="btn btn-sm btn-primary" style="margin-left:8px" data-action="goto" data-view="license">${esc(t('license.cta'))}</button></div>` : ''}
+      ${lockNote('tunnel')}
       <div class="hint-box warn">${esc(t('network.ipWarning'))}</div>
     </div>
   </div>`;
@@ -810,12 +852,14 @@ function tabConfig(inst) {
         <input type="number" min="512" step="512" value="${inst.memoryMB}" data-inst="${esc(inst.id)}" data-field="memoryMB" /></label>
       <label class="field"><span>${esc(t('config.maxPlayers'))}</span>
         <input type="number" min="1" max="500" value="${inst.maxPlayers}" data-inst="${esc(inst.id)}" data-field="maxPlayers" /></label>
-      <label class="check"><input type="checkbox" ${inst.autoRestart ? 'checked' : ''} data-inst="${esc(inst.id)}" data-field="autoRestart" />
-        <span>${esc(t('config.autoRestart'))}</span></label>
-      <label class="check"><input type="checkbox" ${inst.scheduleRestarts ? 'checked' : ''} data-inst="${esc(inst.id)}" data-field="scheduleRestarts" />
-        <span>${esc(t('config.schedule'))}</span></label>
-      <label class="field"><span>${esc(t('config.scheduleTime'))}</span>
-        <input type="text" placeholder="04:00" value="${esc(inst.scheduledRestart || '')}" data-inst="${esc(inst.id)}" data-field="scheduledRestart" /></label>
+      <label class="check${lockedClass('autoRestart')}"><input type="checkbox" ${inst.autoRestart ? 'checked' : ''} data-inst="${esc(inst.id)}" data-field="autoRestart" ${lockedAttr('autoRestart')} />
+        <span>${esc(t('config.autoRestart'))}</span>${lockTag('autoRestart')}</label>
+      <label class="check${lockedClass('scheduledRestarts')}"><input type="checkbox" ${inst.scheduleRestarts ? 'checked' : ''} data-inst="${esc(inst.id)}" data-field="scheduleRestarts" ${lockedAttr('scheduledRestarts')} />
+        <span>${esc(t('config.schedule'))}</span>${lockTag('scheduledRestarts')}</label>
+      <label class="field${lockedClass('scheduledRestarts')}"><span>${esc(t('config.scheduleTime'))}</span>
+        <input type="text" placeholder="04:00" value="${esc(inst.scheduledRestart || '')}" data-inst="${esc(inst.id)}" data-field="scheduledRestart" ${lockedAttr('scheduledRestarts')} /></label>
+      ${lockNote('autoRestart')}
+      ${lockNote('scheduledRestarts')}
       <button class="btn btn-primary" data-action="save-instance" data-id="${esc(inst.id)}">${esc(t('action.save'))}</button>
       <button class="btn" data-action="reinstall" data-id="${esc(inst.id)}">${esc(t('config.reinstall'))}</button>
       <div class="hint-box warn" style="margin-top:12px">${esc(t('config.reinstallHint'))}</div>
@@ -1425,10 +1469,34 @@ function viewCloud() {
 
 function viewLicense() {
   const lic = state.license || {};
-  const tiers = [
-    { id: 'free', name: 'Free', items: ['license.free.1', 'license.free.2', 'license.free.3'] },
-    { id: 'supporter', name: t('license.supporter'), items: ['license.pro.1', 'license.pro.2', 'license.pro.3', 'license.pro.4', 'license.pro.5'] }
-  ];
+  const supportMail = (state.monetize && state.monetize.supporter && state.monetize.supporter.email) || 'leonhardyvon@gmx.net';
+  // rows carry the feature they belong to, so the table shows what is unlocked now
+  const tierRows = {
+    free: [
+      { text: 'license.free.1' },
+      { text: 'license.free.2' },
+      { text: 'license.free.3' }
+    ],
+    supporter: [
+      { text: 'license.pro.4', feature: 'autoRestart' },
+      { text: 'license.pro.1', feature: 'tunnel' },
+      { text: 'license.pro.2', feature: 'scheduledRestarts' },
+      { text: 'license.pro.3', feature: 'autoBackups' }
+    ],
+    cloud: [
+      { text: 'license.pro.4', feature: 'autoRestart' },
+      { text: 'license.pro.1', feature: 'tunnel' },
+      { text: 'license.pro.2', feature: 'scheduledRestarts' },
+      { text: 'license.pro.3', feature: 'autoBackups' },
+      { text: 'license.cloudRow', feature: 'cloudHosting' }
+    ]
+  };
+  const mark = (feature) => {
+    if (!feature) return '<span style="color:var(--green)">✓</span>';
+    return hasFeature(feature)
+      ? '<span style="color:var(--green)">✓</span>'
+      : `<span class="muted" title="${esc(t('lock.tooltip'))}">🔒</span>`;
+  };
   return `<div class="grid cols-2">
     <div class="card">
       <h3>${esc(t('license.current'))}</h3>
@@ -1438,6 +1506,7 @@ function viewLicense() {
         <td class="mono small">${esc(k.preview)}</td>
         <td>${k.valid ? '✓' : `<span class="muted">${esc(k.reason || 'invalid')}</span>`}</td>
         <td class="muted small">${esc(k.name || k.label || '')}</td>
+        <td class="muted small">${k.boundTo ? `<span class="mono">${esc(k.boundTo)}</span>` : esc(t('license.unbound'))}</td>
         <td class="muted small">${k.expires ? esc(fmtTime(k.expires)) : esc(t('license.never'))}</td>
         <td class="actions"><button class="btn btn-sm btn-danger" data-action="license-remove" data-key="${esc(k.preview)}">✕</button></td>
       </tr>`).join('')}</tbody></table>` : ''}
@@ -1450,16 +1519,36 @@ function viewLicense() {
     </div>
     <div class="card">
       <h3>${esc(t('license.tiers'))}</h3>
-      ${tiers.map((tier) => `<div style="margin-bottom:14px">
-        <div class="row between"><strong>${esc(tier.name)}</strong>
-          ${tier.id === 'supporter' ? `<span class="muted small">${esc(state.monetize && state.monetize.supporter ? `${state.monetize.supporter.price} ${state.monetize.currency || 'EUR'}` : '')}</span>` : ''}</div>
-        <ul class="muted small" style="margin:6px 0 0 16px">${tier.items.map((k) => `<li>${esc(t(k))}</li>`).join('')}</ul>
+      ${['free', 'supporter', 'cloud'].map((id) => `<div style="margin-bottom:14px" data-tier="${id}">
+        <div class="row between"><strong>${esc(id === 'supporter' ? t('license.supporter') : id === 'cloud' ? t('license.cloudTier') : t('license.freeTier'))}</strong>
+          ${id === 'supporter' ? `<span class="muted small">${esc(state.monetize && state.monetize.supporter ? `${state.monetize.supporter.price} ${state.monetize.currency || 'EUR'}` : '')}</span>` : ''}</div>
+        <table class="small"><tbody>${tierRows[id].map((row) => `<tr>
+          <td style="width:24px">${mark(row.feature)}</td><td class="muted">${esc(t(row.text))}</td></tr>`).join('')}</tbody></table>
       </div>`).join('')}
       <div class="row">
         ${state.monetize && state.monetize.supporter && state.monetize.supporter.checkoutUrl
           ? `<button class="btn btn-primary" data-action="open-external" data-url="${esc(state.monetize.supporter.checkoutUrl)}">${esc(t('license.buy'))}</button>`
           : `<button class="btn btn-primary" data-action="license-howto">${esc(t('license.howtoBtn'))}</button>`}
       </div>
+    </div>
+  </div>
+  <div class="card" id="hw-card">
+    <h3>${esc(t('license.hw.title'))}</h3>
+    <div class="row between">
+      <span class="hw-id" id="hw-id" data-hw="${esc(lic.machineId || '')}">${esc(lic.machineId || '—')}</span>
+      <button class="btn btn-sm" data-action="copy" data-text="${esc(lic.machineId || '')}">⧉ ${esc(t('license.hw.copy'))}</button>
+    </div>
+    ${lic.machineIdWeak ? `<div class="hint-box warn" style="margin-top:10px">${esc(t('license.hw.weak'))}</div>` : ''}
+    <div class="muted small" style="margin-top:10px">${esc(t('license.hw.body'))}</div>
+    <ol class="muted small" style="margin:10px 0 0 18px">
+      <li>${esc(t('license.hw.step1'))}</li>
+      <li>${esc(t('license.hw.step2'))}</li>
+      <li>${esc(t('license.hw.step3', { mail: supportMail }))}</li>
+      <li>${esc(t('license.hw.step4'))}</li>
+    </ol>
+    <div class="row" style="margin-top:12px">
+      <button class="btn btn-primary" data-action="license-mail">${esc(t('license.hw.mail'))}</button>
+      <span class="muted small">${esc(supportMail)}</span>
     </div>
   </div>
   <div class="card">
@@ -2278,6 +2367,15 @@ const actions = {
   },
   'update-install': async () => {
     try { await call(api.updater.install()); } catch (err) { notifyError(err); }
+  },
+  // Pre-filled mail: the buyer only has to attach proof of purchase. The address and
+  // the hardware id both come from state, so the text matches what is on screen.
+  'license-mail': async () => {
+    const id = (state.license && state.license.machineId) || '';
+    const to = (state.monetize && state.monetize.supporter && state.monetize.supporter.email) || '';
+    if (!to) { toast(t('license.hw.noMail'), 'warn'); return; }
+    const url = `mailto:${to}?subject=${encodeURIComponent(t('license.hw.mailSubject'))}&body=${encodeURIComponent(t('license.hw.mailBody', { id }))}`;
+    try { await call(api.app.openExternal({ url })); } catch (err) { notifyError(err); }
   },
   'save-props': async (el) => {
     const patch = {};

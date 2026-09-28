@@ -677,6 +677,75 @@ function script() {
         !!(after && after.ok && after.data.values['online-mode'] === 'true'),
         after && after.data ? String(after.data.values['online-mode']) : 'n/a');
 
+      // ---- supporter gating is visible ------------------------------------
+      // A free user used to see normal-looking controls and only learned about the
+      // paywall from an error toast after clicking. Every gated control must now
+      // carry a lock badge, be disabled, and have an explainer box that links to
+      // the licence view.
+      const licTier = (state.license && state.license.tier) || 'free';
+      ok('gating: this run is on the free tier (otherwise the locks are correct to be absent)',
+        licTier === 'free', 'tier=' + licTier);
+
+      const gatedControls = [
+        ['autoRestart', 'config'],
+        ['scheduledRestarts', 'config']
+      ];
+      for (const [feature, tab] of gatedControls) {
+        const el = document.querySelector('[data-locked-control="' + feature + '"]');
+        ok('gating: ' + feature + ' is visibly disabled', !!el && el.disabled === true,
+          el ? 'disabled=' + el.disabled : 'no marked control on the ' + tab + ' tab');
+      }
+      const configBadge = document.querySelector('[data-locked="autoRestart"]');
+      ok('gating: the locked feature carries a lock badge', !!configBadge,
+        configBadge ? 'text=' + configBadge.textContent.trim() : 'no badge');
+      const configNote = document.querySelector('[data-locked-note="autoRestart"]');
+      ok('gating: the lock is explained and links to the licence view',
+        !!configNote && /key/i.test(configNote.textContent) && !!configNote.querySelector('[data-view="license"]'),
+        configNote ? configNote.textContent.trim().slice(0, 70) : 'no explainer');
+      // disabling must not throw away a value a supporter already set
+      const autoRestartBox = document.querySelector('[data-field="autoRestart"]');
+      ok('gating: a locked checkbox still shows the stored value',
+        !!autoRestartBox && (autoRestartBox.checked === !!state.instances.find((i) => i.id === instId).autoRestart),
+        autoRestartBox ? 'checked=' + autoRestartBox.checked : 'no checkbox');
+
+      for (const tab of ['backups', 'network']) {
+        const btn = document.querySelector('[data-action="tab"][data-tab="' + tab + '"]');
+        if (btn) { btn.click(); await sleep(1100); }
+        const feature = tab === 'backups' ? 'autoBackups' : 'tunnel';
+        const marked = document.querySelector('[data-locked-control="' + feature + '"]');
+        const badge = document.querySelector('[data-locked="' + feature + '"]');
+        const note = document.querySelector('[data-locked-note="' + feature + '"]');
+        ok('gating: ' + tab + ' shows ' + feature + ' as locked',
+          !!marked && marked.disabled === true && !!badge && !!note,
+          (marked ? 'control+disabled ' : 'no control ') + (badge ? '+badge ' : '+no badge ') + (note ? '+explainer' : '+no explainer'));
+      }
+
+      // ---- licence view: hardware id + what a key unlocks ------------------
+      const licBtn = document.querySelector('[data-action="goto"][data-view="license"]');
+      if (licBtn) { licBtn.click(); await sleep(900); }
+      ok('licence: the view opens', state.view === 'license', String(state.view));
+      const hwEl = document.querySelector('[data-hw]');
+      const hwId = hwEl ? hwEl.getAttribute('data-hw') : '';
+      ok('licence: the hardware id is shown', /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/.test(hwId), hwId || 'none');
+      const hwCopy = document.querySelector('[data-action="copy"][data-text="' + hwId + '"]');
+      ok('licence: the hardware id has a copy button', !!hwCopy);
+      ok('licence: the key request is explained step by step',
+        /hardware/i.test(($('#hw-card') || {}).textContent || '') && !!document.querySelector('[data-action="license-mail"]'));
+      const hwCardText = ($('#hw-card') || {}).textContent || '';
+      const mailBtnInCard = document.querySelector('#hw-card [data-action="license-mail"]');
+      const mailSpan = document.querySelector('#hw-card .row span.muted');
+      ok('licence: the request row lives inside the hardware card', !!mailBtnInCard && !!mailSpan,
+        'button: ' + !!mailBtnInCard + ', address span: ' + !!mailSpan + ', card text: ' + hwCardText.length + ' chars');
+      ok('licence: a support address is visible', hwCardText.indexOf('@') !== -1 && hwCardText.indexOf('gmx.net') !== -1,
+        hwCardText.replace(/\\s+/g, ' ').slice(-330));
+      const lockedMarks = document.querySelectorAll('#content [data-tier="supporter"] .muted[title]');
+      ok('licence: the tier table shows what is still locked', lockedMarks.length >= 4, lockedMarks.length + ' locked rows');
+      const backToServer = document.querySelector('[data-action="open-instance"][data-id="' + instId + '"]');
+      if (backToServer) { backToServer.click(); await sleep(900); }
+      ok('licence: returning to the server view works', state.view === 'server', String(state.view));
+      const configBack = document.querySelector('[data-action="tab"][data-tab="config"]');
+      if (configBack) { configBack.click(); await sleep(800); }
+
       // ---- plugins / mods tab ---------------------------------------------
       // Three separate defects lived here and all of them ended in "plugins do
       // not work": the Modrinth facets joined the loader tags with commas
@@ -809,6 +878,12 @@ function script() {
         await sleep(400);
         openWizard();
         await sleep(900);
+      } else if (['settings', 'runtimes', 'cloud', 'license'].includes(LEAVE_ON)) {
+        // leave a top-level view on screen — the licence page is where the hardware
+        // id, the lock explanation and the key request live
+        state.view = LEAVE_ON;
+        rerender();
+        await sleep(1300);
       } else if (['overview', 'console', 'players', 'addons', 'files', 'backups', 'network', 'config'].includes(LEAVE_ON)) {
         // leave a specific tab on screen (e.g. the plugin browser after a search)
         state.tab = LEAVE_ON;

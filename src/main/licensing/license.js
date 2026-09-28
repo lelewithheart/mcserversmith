@@ -19,6 +19,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { getDirs } = require('../core/paths');
 const { readJSON, writeJSON, createLogger } = require('../core/util');
+const hwid = require('../core/hwid');
 
 const log = createLogger('license');
 
@@ -36,13 +37,12 @@ const TIERS = {
       'tunnel',            // managed tunnel / no port forwarding
       'autoRestart',       // watchdog restarts a crashed server
       'scheduledRestarts', // nightly restarts + auto-backup
-      'autoBackups',       // interval backups with retention
-      'branding'           // MOTD/favicon quick tools
+      'autoBackups'        // interval backups with retention
     ]
   },
   cloud: {
     label: 'Cloud',
-    features: ['tunnel', 'autoRestart', 'scheduledRestarts', 'autoBackups', 'branding', 'cloudHosting']
+    features: ['tunnel', 'autoRestart', 'scheduledRestarts', 'autoBackups', 'cloudHosting']
   }
 };
 
@@ -120,6 +120,18 @@ function verify(key) {
     }
   }
   if (!TIERS[payload.t]) return { valid: false, reason: `Unknown tier "${payload.t}"`, payload };
+
+  // Hardware binding: the key carries the machine id it was issued for (payload.h).
+  // A key without `h` stays machine-independent — that is what the plain mint command
+  // produces, useful for a giveaway where people would otherwise have to mail first.
+  if (payload.h && !hwid.matches(payload.h)) {
+    return {
+      valid: false,
+      boundElsewhere: true,
+      payload,
+      reason: `This key was issued for machine ${payload.h}, this machine is ${hwid.machineId()}`
+    };
+  }
 
   return { valid: true, payload, tier: payload.t };
 }
@@ -206,14 +218,20 @@ function deactivate(key) {
 function status() {
   const act = activeEntries();
   const t = tier();
+  const here = hwid.info();
   return {
     tier: t,
     label: (TIERS[t] && TIERS[t].label) || t,
     devMode: devMode(),
     features: features(),
     allFeatures: Object.fromEntries(Object.entries(TIERS).map(([k, v]) => [k, v.features])),
+    // what a key can be locked to — shown in the UI so a buyer can mail it
+    machineId: here.machineId,
+    machineIdSource: here.source,
+    machineIdWeak: here.weakFallback,
     keys: loadStore().keys.map((k) => {
       const v = verify(k.key);
+      const boundTo = (v.payload && v.payload.h) || null;
       return {
         label: k.label,
         addedAt: k.addedAt,
@@ -222,6 +240,8 @@ function status() {
         tier: v.tier || null,
         name: v.payload ? v.payload.n : null,
         expires: v.payload ? v.payload.x : null,
+        boundTo,
+        boundHere: !boundTo || hwid.matches(boundTo),
         preview: `${String(k.key).slice(0, 12)}…${String(k.key).slice(-6)}`
       };
     }),

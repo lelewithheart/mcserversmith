@@ -6,7 +6,8 @@
     "price": "25",
     "checkoutUrl": null,
     "_checkoutUrl_note": "Paste your Gumroad / Lemon Squeezy / Ko-fi / Stripe payment-link URL here once you have one. Until then the app shows an explanation dialog instead of a dead button.",
-    "email": null
+    "email": "leonhardyvon@gmx.net",
+    "_email_note": "Where buyers mail their hardware id + proof of purchase. Shown in the app under Licence and pre-filled into the mailto: link."
   },
   "hosters": [
     {

@@ -93,6 +93,47 @@ record('deactivating falls back to the next tier', license.tier() === 'supporter
 license.deactivate(key);
 record('deactivating everything returns to free', license.tier() === 'free', `tier=${license.tier()}`);
 
+// ---------------------------------------------------------------- hardware binding
+const machineId = license.status().machineId;
+record('the machine id is reported and well formed', /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/.test(String(machineId)), machineId);
+record('the machine id is stable', license.status().machineId === machineId);
+
+const foreignId = machineId === '0000-0000-0000-0000' ? '1111-1111-1111-1111' : '0000-0000-0000-0000';
+
+const boundHere = mint(['--tier', 'supporter', '--hw', machineId, '--name', 'Bound Buyer']);
+record('a key bound to THIS machine verifies', license.verify(boundHere).valid === true);
+const boundStore = license.activate(boundHere);
+record('a key bound to THIS machine activates', boundStore.tier === 'supporter', `tier=${boundStore.tier}`);
+record('the bound key is recorded as bound to this machine',
+  boundStore.keys.some((k) => k.boundTo === machineId && k.boundHere === true),
+  JSON.stringify(boundStore.keys.map((k) => ({ boundTo: k.boundTo, boundHere: k.boundHere }))));
+
+const boundElsewhere = mint(['--tier', 'supporter', '--hw', foreignId]);
+const foreignCheck = license.verify(boundElsewhere);
+record('a key bound to ANOTHER machine does not verify',
+  foreignCheck.valid === false && foreignCheck.boundElsewhere === true, foreignCheck.reason);
+let foreignRejected = null;
+try { license.activate(boundElsewhere); } catch (err) { foreignRejected = err; }
+record('activating a foreign-bound key fails with a readable reason',
+  !!foreignRejected && /machine/i.test(foreignRejected.message), foreignRejected && foreignRejected.message);
+record('the rejected key was not stored', license.status().keys.length === 1, `${license.status().keys.length} keys`);
+
+// a hardware id pasted in any shape must land in the same key
+const messy = mint(['--tier', 'supporter', '--hw', machineId.replace(/-/g, '').toLowerCase()]);
+record('a machine id copied without dashes/case still binds',
+  license.verify(messy).valid === true && license.verify(messy).payload.h === machineId,
+  license.verify(messy).payload.h);
+
+// unbound keys must keep working (giveaways) — they are what --batch produces
+const unbound = mint(['--tier', 'supporter']);
+record('an unbound key still works (ready for a giveaway)',
+  license.verify(unbound).valid === true && !license.verify(unbound).payload.h);
+
+license.deactivate(boundHere);
+license.deactivate(messy);
+license.deactivate(unbound);
+record('the store is clean again', license.status().keys.length === 0 && license.tier() === 'free');
+
 fs.rmSync(dataRoot, { recursive: true, force: true });
 
 const failed = results.filter((r) => !r.ok).length;

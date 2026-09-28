@@ -3,6 +3,34 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [1.1.0] — 2026-09-29
+
+### Added
+- **Hardware-bound licence keys.** `node tools/keygen.js --machine` prints this
+  machine's hardware id — a SHA-256 of the Windows `MachineGuid` (Linux:
+  `/etc/machine-id`, macOS: `IOPlatformUUID`), shown as `XXXX-XXXX-XXXX-XXXX`. The new
+  `--hw <id>` locks a key to it:
+  `node tools/keygen.js --mint --tier supporter --hw 8AB1-0427-55E1-61F3 --name "…"`.
+  A bound key verifies on that machine only; keys without `--hw` (every `--batch` key)
+  stay machine-independent, which is what a giveaway wants. Settings → Licence shows
+  the id with a copy button and a pre-filled request mail.
+  Two limits are written into the code and the UI rather than glossed over: the id
+  survives hardware swaps but **not** an OS reinstall (per-component ids would change
+  far more often), and this is a **client-side** check — it stops key sharing, not a
+  user who patches the app. Nothing that verifies offline can do better.
+- **The paywall is visible before you hit it.** Every gated control carries a 🔒 badge,
+  is actually disabled, and has an explainer box that links to the licence view —
+  tunnel, crash watchdog, scheduled restarts, interval backups. Previously all four
+  looked normal and a free user only found out from an error toast after clicking.
+  The licence view lists free/supporter/cloud with ✓/🔒 per row for the current tier.
+- The purchase flow lives in the app: pay → mail the hardware id + proof of purchase →
+  paste the returned key. The request button opens a pre-filled mail
+  (`support email` comes from `resources/monetization.json`, so it is white-labellable).
+
+### Changed
+- Removed `branding` from the supporter tier: it was listed as a paid feature but no
+  code path ever checked it, so nothing was gated by it. Better to not sell it.
+
 ## [1.0.1] — 2026-09-28
 
 A packaging release. The 1.0.0 release page had 15 files, most of them generated

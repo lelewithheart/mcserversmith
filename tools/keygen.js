@@ -13,6 +13,13 @@
  *       node tools/keygen.js --mint --tier supporter --name "Max M." --email max@example.com
  *       node tools/keygen.js --mint --tier cloud --days 365 --name "Community X"
  *
+ *  2b) Bind a key to ONE machine (the buyer mails you the hardware id the app shows
+ *      under Settings -> Licence, plus proof of purchase):
+ *       node tools/keygen.js --machine                       # this machine's id
+ *       node tools/keygen.js --mint --tier supporter --hw 8AB1-0427-55E1-61F3 --name "Max M."
+ *      Without --hw the key works on any machine (that is what a giveaway wants).
+ *      A reinstall of the OS changes the id, so expect to re-issue now and then.
+ *
  *  3) Mint a whole batch into a file (giveaway, supporter wall, Patreon drop):
  *       node tools/keygen.js --batch 100 --tier supporter
  *       node tools/keygen.js --batch 100 --tier cloud --days 365 --out private/x.csv
@@ -29,6 +36,7 @@ const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const KEYS_DIR = path.join(ROOT, 'keys');
+const hwid = require('../src/main/core/hwid');
 const PRIVATE_KEY_FILE = path.join(KEYS_DIR, 'mcss-private.pem');
 const PUBLIC_KEY_FILE = path.join(KEYS_DIR, 'mcss-public.txt');
 
@@ -84,6 +92,7 @@ function loadPrivate() {
 function mintKey(opts, extra = {}) {
   const tier = opts.tier || 'supporter';
   const days = opts.days ? Number(opts.days) : null;
+  const hw = opts.hw && opts.hw !== true ? formatHw(String(opts.hw)) : null;
   const payload = {
     v: 1,
     t: tier,
@@ -92,6 +101,7 @@ function mintKey(opts, extra = {}) {
     i: new Date().toISOString(),
     x: days ? new Date(Date.now() + days * 86400000).toISOString() : (opts.expires || null),
     k: opts.kid || 'default',
+    ...(hw ? { h: hw } : {}),
     ...extra
   };
   const json = JSON.stringify(payload);
@@ -100,12 +110,27 @@ function mintKey(opts, extra = {}) {
   return { key: `MCSS1-${b64u(Buffer.from(json))}.${b64u(signature)}`, payload };
 }
 
+/** Accept XXXX-XXXX-XXXX-XXXX, xxxxxxxxxxxxxxxx or anything in between. */
+function formatHw(value) {
+  const clean = hwid.normalize(value);
+  if (clean.length !== 16) {
+    console.error(`hardware id must be 16 characters (got ${clean.length}: "${value}")`);
+    console.error('it is shown in the app under Settings -> Licence -> Hardware-ID');
+    process.exit(2);
+  }
+  return `${clean.slice(0, 4)}-${clean.slice(4, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}`;
+}
+
 function mint(opts) {
   const { key, payload } = mintKey(opts);
   console.log(`\nTier      : ${payload.t}`);
   console.log(`Name      : ${payload.n || '-'}`);
   console.log(`Email     : ${payload.e || '-'}`);
   console.log(`Expires   : ${payload.x || 'never'}`);
+  console.log(`Machine   : ${payload.h || 'any (not hardware-bound)'}`);
+  if (payload.h) {
+    console.log(`            this key only works on the machine with that id`);
+  }
   console.log('\nLICENCE KEY (send this to the customer):\n');
   console.log(key);
   console.log('');
@@ -134,6 +159,13 @@ function batch(opts) {
   const count = Number(opts.batch);
   if (!Number.isFinite(count) || count < 1 || count > 10000) {
     console.error('--batch needs a number between 1 and 10000');
+    process.exit(2);
+  }
+  if (opts.hw) {
+    // every key in a batch would be locked to the same machine, which is never what
+    // a batch is for: giveaways want machine-independent keys
+    console.error('--batch and --hw do not belong together: a batch binds every key to the same machine.');
+    console.error('mint single bound keys instead: node tools/keygen.js --mint --hw <id> …');
     process.exit(2);
   }
   const tier = opts.tier || 'supporter';
@@ -194,7 +226,12 @@ function verify(key) {
 }
 
 const a = args();
-if (a.keygen) keygen();
+if (a.machine) {
+  const info = hwid.info();
+  console.log(`\nThis machine's hardware id: ${info.machineId}`);
+  console.log(`  source : ${info.source}${info.weakFallback ? '  (fallback — weaker, changes if the machine is renamed)' : ''}`);
+  console.log(`  use it : node tools/keygen.js --mint --tier supporter --hw ${info.machineId}\n`);
+} else if (a.keygen) keygen();
 else if (a.batch) batch(a);
 else if (a.mint) mint(a);
 else if (a.verify) verify(a._[0] || a.verify);

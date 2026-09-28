@@ -83,6 +83,27 @@ html, body {
 }
 .badge.paid { background: rgba(160, 107, 255, .18); border-color: var(--purple); color: #d6bcff; }
 
+/* ---- supporter gating, made visible --------------------------------------
+   A locked control has to look locked before it is clicked: a lock badge next to
+   the label plus a disabled control (and the "why" in the tooltip). Previously a
+   free user only learned about it from an error toast after the click. */
+.lock-badge {
+  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em; vertical-align: middle;
+  color: #d6bcff; background: rgba(160, 107, 255, .16); border: 1px solid rgba(160, 107, 255, .45);
+}
+.lock-badge.cloud { color: #b6d4ff; background: rgba(91, 140, 255, .16); border-color: rgba(91, 140, 255, .5); }
+.locked-row { opacity: .55; }
+input:disabled, select:disabled, textarea:disabled {
+  opacity: .5; cursor: not-allowed; background: var(--bg-3); color: var(--muted);
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.hw-id {
+  font-family: var(--mono); font-size: 18px; letter-spacing: .08em; color: var(--text);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 14px; display: inline-block; user-select: all;
+}
+
 /* ------------------------------------------------------------------- main */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .topbar {

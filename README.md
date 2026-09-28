@@ -182,9 +182,28 @@ node tools/keygen.js --keygen                       # once: creates keys/mcss-pr
 
 node tools/keygen.js --mint --tier supporter --name "Max M." --email max@example.com
 node tools/keygen.js --mint --tier cloud --days 365 --name "Community X"
+node tools/keygen.js --machine                                        # this machine's hardware id
+node tools/keygen.js --mint --tier supporter --hw 8AB1-0427-55E1-61F3  # key locked to that machine
 node tools/keygen.js --batch 100 --tier supporter                # 100 keys -> private/supporter-keys-100-<date>.csv
 node tools/keygen.js --verify MCSS1-....
 ```
+
+**Hardware-bound keys.** The app shows its hardware id under Settings → Licence
+(`8AB1-0427-55E1-61F3`). A buyer mails that id with their proof of purchase, you mint a
+key with `--hw <id>`, and it verifies on that machine only — handing the key to a friend
+does nothing. Keys minted without `--hw` work everywhere (that is what `--batch` makes:
+giveaway keys).
+
+What the binding can and cannot do, so nobody assumes more than it delivers:
+
+- The id is a SHA-256 of `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` (Windows),
+  `/etc/machine-id` (Linux) or the `IOPlatformUUID` (macOS). Swapping GPU, RAM or disks
+  does not change it; **reinstalling the OS does**, and that needs a re-issue from you.
+- It is checked on the client. It stops casual key sharing. It does not stop someone
+  who patches the app — no offline verification can. If that matters, the optional
+  `licenseServerUrl` activation/revocation endpoint in `license.js` is the next step.
+- If a system exposes no stable id at all, the app falls back to hostname + user and
+  says so in the licence view instead of pretending.
 
 Send the customer the printed `MCSS1-…` string; they paste it into
 **Supporter → Activate a key**.

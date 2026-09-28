@@ -22,7 +22,12 @@ for (const x of ['none', 'frp', 'playit', 'custom']) used.add(`tunnel.${x}`);
 for (let i = 1; i <= 4; i += 1) used.add(`wizard.step${i}`);
 for (const f of ['cloud', 'tunnel']) { used.add(`upsell.${f}.headline`); used.add(`upsell.${f}.body`); }
 for (let i = 1; i <= 3; i += 1) used.add(`license.free.${i}`);
-for (let i = 1; i <= 5; i += 1) used.add(`license.pro.${i}`);
+for (let i = 1; i <= 4; i += 1) used.add(`license.pro.${i}`);
+// gated-feature labels: the renderer looks them up through the FEATURES map, so the
+// literals never appear inside a t('…') call the regex could see
+for (const f of ['tunnel', 'autoRestart', 'scheduledRestarts', 'autoBackups', 'cloudHosting']) {
+  used.add(`feature.${f}`);
+}
 
 const files = fs.readdirSync(localesDir).filter((f) => f.endsWith('.json'));
 let problems = 0;
