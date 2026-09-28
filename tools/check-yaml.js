@@ -86,9 +86,26 @@ try {
     'a tag build without a CHANGELOG section ships empty release notes');
   const pkgForWorkflow = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const distScripts = ['dist', 'dist:win', 'dist:linux'].map((name) => String((pkgForWorkflow.scripts || {})[name] || ''));
+  // A dist script may delegate to a tools/ helper (the two-pass Windows build does:
+  // one arch per electron-builder run). The flag then has to live in that helper —
+  // check the file instead of the one-liner, or the guard silently stops guarding.
+  const publishPolicySource = (script) => {
+    const tool = (script.match(/node\s+(tools[\\/][\w.-]+\.js)/) || [])[1];
+    if (!tool) return script;
+    const file = path.join(root, tool.replace(/\//g, path.sep));
+    return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+  };
+  // `--publish never` appears as one argument in the npm one-liners and as two argv
+  // elements in a spawnSync call ('--publish', 'never') — both are one policy flag,
+  // and a SECOND one is what silently enables publishing.
+  const disablesPublishing = (src) => {
+    const hits = (src.match(/--publish/g) || []).length;
+    const never = /--publish never/.test(src) || /--publish['"]?\s*,\s*['"]never['"]/.test(src);
+    return hits === 1 && never;
+  };
   report('every npm dist script disables publishing once',
-    distScripts.every((s) => (s.match(/--publish/g) || []).length === 1 && s.includes('--publish never')),
-    'exactly one --publish never per script, and no "-- --publish" appended on the command line');
+    distScripts.every((s) => disablesPublishing(publishPolicySource(s))),
+    'exactly one --publish never per build command (in the script or the tools/ helper it calls), and no "-- --publish" appended on the command line');
 } catch (err) {
   failed += 1;
   console.log(`FAIL  workflow sanity checks: ${err.message.split('\n')[0]}`);

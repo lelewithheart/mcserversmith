@@ -3,6 +3,36 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [1.0.1] — 2026-09-28
+
+A packaging release. The 1.0.0 release page had 15 files, most of them generated
+noise, and the one file the updater used was a 216 MB combined installer.
+
+### Changed
+- **The release page went from 15 files to 10.** `electron-builder` is now invoked
+  once per Windows architecture (`tools/build-win.js`), which removes the combined
+  multi-architecture installer — its single `latest.yml` pointed at it, so every
+  self-update downloaded 216 MB instead of 112 MB. Windows downloads: 2 installers
+  (x64 112 MB, arm64 105 MB) and the two feeds that belong to them.
+- **One checksum file instead of one per artifact:** `SHA256SUMS.txt` covers every
+  binary (`sha256sum -c SHA256SUMS.txt`), replacing six `.sha256` files.
+- Windows on ARM reads its own update feed (`win-arm64.yml`). It used to share
+  `latest.yml`, which points at the x64 installer — an ARM installation would have
+  been silently replaced by the emulated build on the next update.
+
+### Added
+- `tools/build-win.js` (`npm run dist:win`, plus `dist:win:x64` / `dist:win:arm64`)
+  builds both architectures as separate runs, names the arm64 feed, and **fails** if a
+  combined installer ever appears again — this is the guard that caught the first
+  attempt, where an `arch:` list in `electron-builder.yml` was merged with the CLI
+  flag and re-created it.
+- `tools/ci-watch.js` follows a GitHub Actions run for a tag and reports the failing
+  step.
+- The release job now re-runs `npm run check:update` **after** publishing, where the
+  checks are strict (asset count, no combined installer, arm64 feed present). The
+  verify job deliberately only judges the feed it can see, which at tag time is still
+  the previous release.
+
 ## [1.0.0] — 2026-09-28
 
 **The first release that does everything the app claims.** It is also the release that

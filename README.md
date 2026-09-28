@@ -101,9 +101,14 @@ Verified paths so far: **Paper 1.21.4** (27/27 e2e checks), **Fabric 1.21.4** (i
 ## Building installers
 
 ```bash
-npm run dist:win       # NSIS installer (x64 + arm64)
+npm run dist:win       # NSIS installers, one per architecture (x64 + arm64)
 npm run dist:linux     # AppImage + .deb
 ```
+
+`dist:win` runs electron-builder twice (once per architecture) on purpose: a single
+run with both arches also emits a combined installer that the updater's single
+`latest.yml` would point at, doubling every update download. `npm run dist:win:x64`
+and `dist:win:arm64` build one architecture only.
 
 Building for the *other* OS needs a matching runner — `.github/workflows/build.yml`
 does both on tags (`git tag v0.1.0 && git push --tags`).
@@ -119,14 +124,20 @@ On start it checks, downloads a newer build in the background and installs it on
 next quit; Settings → Updates shows the state and has a manual "Check now". The
 "Check for updates" switch turns the automatic start-up check off.
 
+Feed files, one per platform+arch — they are what makes updates possible, not downloads:
+`latest.yml` (Windows x64), `win-arm64.yml` (Windows on ARM), `latest-linux.yml`
+(Linux x64), `latest-linux-arm64.yml` (Linux arm64). A build that ships without its
+feed cannot update itself, and Windows on ARM would silently be replaced by the x64
+build, so `npm run check:update` fails when a release is missing one.
+
 Some channels must **not** self-update — they update their own copies: Microsoft Store,
 Flathub, Snap, winget/Scoop/Chocolatey (set `MCSERVERSMITH_STORE=1` in those builds) and
 the itch **desktop app** (detected from the install path; the itch client updates it).
 
-What a release needs to keep working: the tag has to match `package.json`, and
-`latest.yml` / `latest-linux.yml` must be attached to the release — both happen
-automatically in `.github/workflows/build.yml`, and `npm run check:update` fails loudly
-if a release is missing them.
+What a release needs to keep working: the tag has to match `package.json`, and the feed
+files have to be attached to the release — both happen automatically in
+`.github/workflows/build.yml` (the release job re-runs `npm run check:update` after
+publishing, where the checks are strict).
 
 ### itch.io
 

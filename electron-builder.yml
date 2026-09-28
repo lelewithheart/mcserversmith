@@ -40,11 +40,13 @@ compression: normal
 # (or a native runner) — the GitHub workflow below does both OSes for you.
 
 win:
+  # No `arch:` list here on purpose. tools/build-win.js passes --x64 / --arm64, and
+  # an arch list in this file is MERGED with the CLI flag: the run then builds both
+  # architectures and emits the combined 216 MB installer again, whose feed entry is
+  # the one the updater would use (every update twice the size). For the same reason
+  # a single run with `arch: [x64, arm64]` is not what we build — see tools/build-win.js.
   target:
     - target: nsis
-      arch:
-        - x64
-        - arm64
   icon: resources/icon.png
   artifactName: ${productName}-${version}-win-${arch}.${ext}
 

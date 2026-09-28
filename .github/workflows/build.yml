@@ -97,9 +97,10 @@ jobs:
         shell: bash
         run: |
           cd dist
-          for f in *.exe *.AppImage *.deb; do
-            [ -f "$f" ] && sha256sum "$f" > "$f.sha256" || true
-          done
+          # ONE checksum file instead of one per artifact: the release page stays
+          # readable and `sha256sum -c SHA256SUMS.txt` still verifies everything
+          sha256sum *.exe *.AppImage *.deb > SHA256SUMS.txt 2>/dev/null || true
+          cat SHA256SUMS.txt
           ls -la
       - uses: actions/upload-artifact@v4
         with:
@@ -109,7 +110,8 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/latest*.yml
-            dist/*.sha256
+            dist/win-arm64.yml
+            dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -194,3 +196,10 @@ jobs:
           curl -sL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
           unzip -o -q butler.zip && chmod +x butler && ./butler version
           BUTLER_PATH="$PWD/butler" node tools/itch-publish.js --all
+
+      # Judge the release that was just published — the verify job cannot do this,
+      # because at tag time the feed still points at the previous version. This is
+      # the step that would have caught a 15-asset release page, a combined
+      # multi-arch installer, or an arm64 installer without its own feed.
+      - name: Verify the published release
+        run: node tools/check-update-feed.js

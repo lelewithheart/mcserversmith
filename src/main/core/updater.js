@@ -114,6 +114,19 @@ function applyFakeVersion() {
   } catch { return false; }
 }
 
+/**
+ * The update feed this platform reads.
+ *
+ * electron-updater names the feed by channel + platform: `latest.yml` on Windows
+ * (x64), `latest-linux.yml` / `latest-linux-arm64.yml` on Linux. Only Windows on
+ * ARM needs help: x64 and arm64 are separate installers there, and the default
+ * `latest.yml` points at the x64 one — an ARM installation would silently be
+ * replaced by the emulated build. The arm64 feed is `win-arm64.yml`.
+ */
+function feedChannel(platform = process.platform, arch = process.arch) {
+  return platform === 'win32' && arch === 'arm64' ? 'win-arm64' : null;
+}
+
 // ---------------------------------------------------------------------------
 let loadError = null;
 
@@ -140,6 +153,13 @@ function loadUpdater() {
   if (process.env.MCSERVERSMITH_UPDATE_DEV === '1' && !require('electron').app.isPackaged) {
     // lets a dev run check the real feed against dev-app-update.yml
     autoUpdater.forceDevUpdateConfig = true;
+  }
+  const channel = feedChannel();
+  if (channel) {
+    autoUpdater.channel = channel;
+    // assigning `channel` flips allowDowngrade on — do not let a version typo
+    // push an older build onto a user
+    autoUpdater.allowDowngrade = false;
   }
 
   autoUpdater.on('checking-for-update', () => setState({ status: 'checking', error: null }));
@@ -260,6 +280,7 @@ module.exports = {
   stop,
   snapshot,
   isNewer,
+  feedChannel,
   disabledReason,
   supported,
   state
