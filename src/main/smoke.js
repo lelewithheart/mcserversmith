@@ -258,16 +258,20 @@ function script() {
       ok('next unblocks after acknowledging', !!nextAfter && nextAfter.disabled === false, nextAfter ? String(nextAfter.disabled) : 'no button');
     }
 
-    // walk to the last step and confirm the EULA box enables "Create and install"
-    let step = 1;
-    for (;;) {
+    // walk to the last step and confirm the EULA box enables "Create and install".
+    // Driven by state.wizard.step, not by a click counter: step 2 and 3 fetch
+    // from live APIs and Next stays disabled while that request is in flight.
+    let step = state.wizard ? state.wizard.step : 1;
+    for (let i = 0; i < 8; i += 1) {
+      if (document.querySelector('[data-action="wizard-create"]')) break;
       const btn = document.querySelector('[data-action="wizard-next"]');
-      if (!btn || btn.disabled) break;
+      if (!btn) break;
+      if (btn.disabled) { await sleep(1500); continue; }
       btn.click();
-      await sleep(step === 1 ? 2600 : 900);
-      step += 1;
-      if (step > 4) break;
+      await sleep(2600);
+      step = state.wizard ? state.wizard.step : step;
     }
+    step = state.wizard ? state.wizard.step : step;
     ok('wizard reached the final step', step >= 4, 'step ' + step);
     const eulaBox = $('#wz-eula');
     ok('eula checkbox present on the final step', !!eulaBox);
@@ -634,6 +638,104 @@ function script() {
         !!(after && after.ok && after.data.values['online-mode'] === 'true'),
         after && after.data ? String(after.data.values['online-mode']) : 'n/a');
 
+      // ---- plugins / mods tab ---------------------------------------------
+      // Three separate defects lived here and all of them ended in "plugins do
+      // not work": the Modrinth facets joined the loader tags with commas
+      // ("categories:paper,bukkit,spigot") and the API answers HTTP 400 to that,
+      // Hangar's version list asked for a parameter that endpoint does not know
+      // (also 400), and the install button put a sha512 checksum into the sha256
+      // field, so the download failed verification.
+      const addonTab = document.querySelector('[data-action="tab"][data-tab="addons"]');
+      ok('addons: the plugins/mods tab button exists', !!addonTab);
+      if (addonTab) { addonTab.click(); await sleep(1200); }
+      ok('addons: tab opened', state.tab === 'addons', String(state.tab));
+
+      const srcSel = $('#addon-source');
+      const qInput = $('#addon-query');
+      ok('addons: source picker and query box present', !!srcSel && !!qInput);
+      if (srcSel) { srcSel.value = 'modrinth'; srcSel.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (qInput) { qInput.value = 'worldedit'; qInput.dispatchEvent(new Event('input', { bubbles: true })); }
+      const searchBtn = document.querySelector('[data-action="addon-search"]');
+      if (searchBtn) { searchBtn.click(); await sleep(4500); }
+      const resultRows = [...document.querySelectorAll('[data-action="addon-versions"]')];
+      ok('addons: Modrinth search returns results (no HTTP 400)', resultRows.length > 0,
+        resultRows.length + ' results, toasts: ' + [...document.querySelectorAll('.toast')].map((t2) => t2.textContent).slice(0, 2).join(' | '));
+
+      const pickRow = resultRows.find((b) => /worldedit/i.test(b.closest('tr').textContent)) || resultRows[0];
+      if (pickRow) { pickRow.click(); await sleep(3500); }
+      const installBtns = [...document.querySelectorAll('[data-action="addon-install"]')];
+      ok('addons: the version list loads', installBtns.length > 0, installBtns.length + ' versions');
+      const smallest = installBtns.sort((a, b) => Number(a.dataset.size || 0) - Number(b.dataset.size || 0))[0];
+      ok('addons: versions carry a download URL and a checksum that keeps its algorithm',
+        !!smallest && /^https:/.test(smallest.dataset.url || '') && !!smallest.dataset.sha512,
+        smallest ? (smallest.dataset.file + ' sha512=' + String(smallest.dataset.sha512).slice(0, 12) + '…') : 'none');
+
+      const errsAddon = document.querySelectorAll('.toast.error').length;
+      // poll instead of a fixed sleep: a big jar plus a slow CDN must not be a
+      // false failure, and an error toast only lives 6.5 s, so sample it while
+      // the download is still running
+      let installErr = '';
+      let installedCount = 0;
+      if (smallest) {
+        smallest.click();
+        for (let i = 0; i < 12 && !installedCount; i += 1) {
+          await sleep(3000);
+          const errToast = document.querySelector('.toast.error');
+          if (errToast && !installErr) installErr = errToast.textContent;
+          const snap = await window.mcss.plugins.installed(instId);
+          if (snap && snap.ok) installedCount = snap.data.files.length;
+        }
+      }
+      ok('addons: installing downloads the jar into plugins/',
+        installedCount > 0,
+        installedCount ? (installedCount + ' file(s), ' + (smallest ? smallest.dataset.file : '?'))
+          : ('still empty after 36s' + (installErr ? ' — ' + installErr : '')));
+      ok('addons: the download verified against the published checksum (no error toast)',
+        !installErr && document.querySelectorAll('.toast.error').length === errsAddon,
+        installErr || 'clean');
+
+      const removeBtn = document.querySelector('[data-action="addon-remove"]');
+      if (removeBtn) {
+        removeBtn.click();
+        await sleep(500);
+        const okBtn = document.querySelector('[data-dialog="ok"]');
+        if (okBtn) { okBtn.click(); await sleep(1200); }
+      }
+      const afterRemove = await window.mcss.plugins.installed(instId);
+      ok('addons: removing it empties plugins/ again',
+        !!(afterRemove && afterRemove.ok && afterRemove.data.files.length === 0),
+        afterRemove && afterRemove.data ? afterRemove.data.files.length + ' files' : 'n/a');
+
+      // Hangar (the PaperMC API) — same flow, different endpoints. The controls
+      // have to be re-queried: the search above re-rendered the card, so the
+      // nodes captured earlier are detached and writing into them changes
+      // nothing (own goal in this test, not in the app).
+      const srcSel2 = $('#addon-source');
+      const qInput2 = $('#addon-query');
+      if (srcSel2) { srcSel2.value = 'hangar'; srcSel2.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (qInput2) { qInput2.value = 'worldedit'; }
+      const searchBtn2 = document.querySelector('[data-action="addon-search"]');
+      if (searchBtn2) { searchBtn2.click(); await sleep(5000); }
+      const hangarRows = [...document.querySelectorAll('[data-action="addon-versions"]')];
+      ok('addons: Hangar search runs against Hangar', hangarRows.length > 0 && hangarRows.every((b) => b.dataset.source === 'hangar'),
+        hangarRows.length + ' results, sources: ' + [...new Set(hangarRows.map((b) => b.dataset.source))].join('/'));
+      const hangarRowInfo = hangarRows[0] ? { source: hangarRows[0].dataset.source, project: hangarRows[0].dataset.project, label: hangarRows[0].closest('tr').textContent.trim().slice(0, 40) } : null;
+      if (hangarRows[0]) { hangarRows[0].click(); await sleep(3500); }
+      const hangarInstall = document.querySelector('[data-action="addon-install"]');
+      const addonKey = 'addons:' + instId;
+      const picked = (state.addons[addonKey] || {}).picked || {};
+      ok('addons: Hangar version list loads (platformVersion, not version)',
+        !!hangarInstall && !!hangarInstall.dataset.sha256 && /^https:/.test(hangarInstall.dataset.url || ''),
+        hangarInstall ? JSON.stringify({
+          row: hangarRowInfo,
+          pickedFirst: (picked.versions || [])[0] ? { n: picked.versions[0].name, src: picked.versions[0].source, url: String(picked.versions[0].downloadUrl || '').slice(0, 40) } : null,
+          btn: {
+            file: hangarInstall.dataset.file || null,
+            url: (hangarInstall.dataset.url || '').slice(0, 40) || null,
+            sha256: (hangarInstall.dataset.sha256 || '').slice(0, 12) || null
+          }
+        }) : 'no install button');
+
       // console: the command box used to grab the focus from the filter box on
       // every re-mount, and the log jumped back to the bottom
       // the console filter keeps focus and text across a poll
@@ -668,6 +770,11 @@ function script() {
         await sleep(400);
         openWizard();
         await sleep(900);
+      } else if (['overview', 'console', 'players', 'addons', 'files', 'backups', 'network', 'config'].includes(LEAVE_ON)) {
+        // leave a specific tab on screen (e.g. the plugin browser after a search)
+        state.tab = LEAVE_ON;
+        rerender();
+        await sleep(1400);
       }
     }
 

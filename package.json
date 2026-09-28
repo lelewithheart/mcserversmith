@@ -20,6 +20,7 @@
     "dev": "electron . --dev",
     "test:headless": "node tools/headless-test.js",
     "test:providers": "node tools/test-providers.js",
+    "test:plugins": "node tools/test-plugins.js",
     "test:license": "node tools/test-license.js",
     "test:backup": "node tools/test-backup.js",
     "test:ui": "node tools/run-ui-test.js",

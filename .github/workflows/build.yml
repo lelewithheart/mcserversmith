@@ -53,6 +53,8 @@ jobs:
         run: node tools/check-state.js
       - name: Provider APIs (live)
         run: node tools/test-providers.js
+      - name: Plugin browser APIs (live)
+        run: node tools/test-plugins.js
 
   build:
     needs: verify

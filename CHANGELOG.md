@@ -5,9 +5,28 @@ All notable changes to MCServerSmith. Format loosely follows
 
 ## [0.4.1] — 2026-09-28
 
-Two reported defects, both of them "the app tells you it worked while doing nothing".
+Two reported defects — the server settings tab and the plugin browser — plus one that
+the tests found on the way. All of them shared a theme: the app said nothing while
+doing nothing, and the errors it did throw were swallowed.
 
 ### Fixed
+- **The plugin browser works again — all three layers of it.** Plugin search answered
+  `HTTP 400 … failed to parse facets … found ","` for every server whose loader list
+  has more than one entry: the Modrinth facet groups joined the tags
+  (`categories:paper,bukkit,spigot`) instead of emitting one string per value, which
+  is what the API expects. Paper, Purpur, Folia, Fabric and friends were all dead;
+  only a single-loader server (Velocity) could search.
+- **Hangar (PaperMC) version lists load.** `/projects/{owner}/{slug}/versions` was
+  asked for `version=`, a filter that endpoint does not have — also HTTP 400, so a
+  Hangar project never showed a single installable build. A Minecraft filter there is
+  `platformVersion` and it requires `platform`; the versions now also carry their
+  `platformDependencies` as game versions.
+- **Installing a module verifies its checksum again.** The install button squeezed
+  whichever digest it found into a `sha256` field, and Modrinth publishes
+  `sha512` + `sha1` — so the downloader compared a sha512 value against a sha256
+  digest and every Modrinth install died with "Checksum mismatch". Each digest now
+  reaches the verifier under its own name, which is also why a Hangar install
+  (sha256) and a Modrinth install (sha512) both pass.
 - **Server → Configuration works again.** `state.props` — the cache of
   `server.properties` — was read and written everywhere but never declared in the
   renderer's state object, so every load went into `undefined` and threw
@@ -22,6 +41,11 @@ Two reported defects, both of them "the app tells you it worked while doing noth
   — so a blank `online-mode` checkbox meant "off", and saving would have kicked
   every player. Missing keys now fall back to Minecraft's own defaults, and a hint
   says the file has not been generated yet.
+- **Double-clicking "Next" in the wizard can no longer skip a step.** Steps 1→2 and
+  2→3 fetch from live APIs and the button stayed enabled while that request was in
+  flight, so the extra clicks were handled too and the wizard ended up on step 5 of
+  4 with an empty modal. The transition is now guarded and the button disabled for
+  its duration.
 
 ### Changed
 - **Server flavour cards are readable.** `.type-card` is a `<button>` and never set
@@ -31,23 +55,38 @@ Two reported defects, both of them "the app tells you it worked while doing noth
   brighter secondary tone (`--text-2`, 9.77:1), hover is visible on the whole card
   and `--muted` is nudged up globally for secondary text. `color-scheme: dark` also
   keeps native widgets (select popups, checkboxes, scrollbars) dark.
+- The Modrinth/PaperMC dropdown in the plugin browser remembers your choice (a
+  repaint used to flip it back silently), and a search that finds nothing for the
+  exact Minecraft version retries without that filter instead of showing an empty
+  list — a project that only lists patch releases (1.21.4) stays findable from a
+  server pinned to "1.21".
 
 ### Added
 - `npm run check:state` (`tools/check-state.js`, also in CI): every `state.<key>`
   the renderer touches must exist in the state literal — the exact bug above, with
   write-into-undefined reported separately from a plain read.
+- `npm run test:plugins` (`tools/test-plugins.js`, also in CI): the facet builder
+  offline, then live Modrinth + Hangar search → versions → download for paper,
+  purpur, folia, spigot, velocity, fabric, forge and neoforge, plus a real install
+  into a throwaway instance (checksum verified, then removed) and a proof that a
+  sha512 digest labelled as sha256 is refused.
 - `MCSERVERSMITH_SMOKE_VIEW=<name>` leaves a view on screen for the smoke
-  screenshot (`ui-<name>.png`), so the wizard's step 1 can be reviewed by eye.
+  screenshot (`ui-<name>.png`): `wizard` for step 1, or any tab name.
 
 ### Verified
-- `npm run test:ui` — **123/123** (was 113). New coverage: the settings tab button
-  really switches the view, `server.properties` reaches the state cache, the motd
-  field is filled in, `online-mode` shows the effective (checked) value, ticking a
-  checkbox writes the file and raises no error toast — plus computed WCAG contrast
-  checks for the flavour cards (13.09:1 and 9.77:1, and 1.32:1 when the fix is
-  reverted). Screenshot of the wizard checked by eye.
+- `npm run test:ui` — **134/134** (was 113). New coverage: the settings tab really
+  switches and loads `server.properties`, the motd field is filled in, `online-mode`
+  shows the effective (checked) value, ticking a checkbox writes the file with no
+  error toast, computed WCAG contrast for the flavour cards (13.09:1 and 9.77:1,
+  and 1.32:1 with the fix reverted) — and the whole plugin flow through the UI:
+  Modrinth search, version list, install (a real 5.7 MB download lands in
+  `plugins/`, verified against the published checksum), remove, then the same for
+  Hangar with its `hangarcdn` URL and sha256.
+- `npm run test:plugins` — **26/26** against the live APIs.
 - `npm run check:state` fails with the four write sites when `props` is removed
   again — verified against a mutated copy of the renderer.
+- Screenshots of the wizard step 1 and of the plugin browser after a Hangar search
+  were checked by eye.
 - The smoke harness now runs with its own `--user-data-dir`: with the installed app
   open, the old harness lost the single-instance lock and quit with **code 0 in two
   seconds, printing nothing**, which reads exactly like a pass. A smoke run that

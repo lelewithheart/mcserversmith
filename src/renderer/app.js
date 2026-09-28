@@ -631,8 +631,10 @@ function tabAddons(inst) {
           <td>${esc(v.name)} <span class="muted small">${esc(v.channel || v.versionType || '')}</span></td>
           <td class="muted small">${esc(fmtBytes(v.size))}</td>
           <td class="actions"><button class="btn btn-sm btn-primary" data-action="addon-install" data-id="${esc(inst.id)}"
-            data-url="${esc(v.downloadUrl)}" data-file="${esc(v.filename)}"
-            data-hash="${esc((v.hashes && (v.hashes.sha256 || v.hashes.sha512 || v.hashes.sha1)) || '')}">${esc(t('addons.install'))}</button></td>
+            data-url="${esc(v.downloadUrl)}" data-file="${esc(v.filename)}" data-size="${esc(v.size || 0)}"
+            data-sha256="${esc((v.hashes && v.hashes.sha256) || '')}"
+            data-sha512="${esc((v.hashes && v.hashes.sha512) || '')}"
+            data-sha1="${esc((v.hashes && v.hashes.sha1) || '')}">${esc(t('addons.install'))}</button></td>
         </tr>`).join('')}
       </tbody></table>
     </div>` : ''}
@@ -1770,7 +1772,7 @@ function renderWizard() {
         <span>${esc(t('eula.acceptLong'))} <a href="#" data-action="open-external" data-url="https://aka.ms/MinecraftEULA">Minecraft EULA</a></span></label>`;
   })();
 
-  const canNext = wizardCanNext();
+  const canNext = wizardCanNext() && !busy('wizard-next');
 
   $('#modal-root').innerHTML = `<div class="modal-backdrop" data-action="modal-backdrop">
     <div class="modal">
@@ -2080,12 +2082,18 @@ const actions = {
   },
   'addon-install': async (el) => {
     const id = el.dataset.id;
-    const hash = el.dataset.hash;
+    // The checksum has to keep its algorithm: Modrinth publishes sha512 + sha1,
+    // Hangar sha256. Squeezing whichever of them existed into a `sha256` field
+    // (the old code did) makes the download verifier compare a sha512 value
+    // against a sha256 digest and every Modrinth install ends in
+    // "Checksum mismatch".
+    const hashes = {};
+    for (const algo of ['sha256', 'sha512', 'sha1']) if (el.dataset[algo]) hashes[algo] = el.dataset[algo];
     try {
       const res = await call(api.plugins.install(id, {
         downloadUrl: el.dataset.url,
         filename: el.dataset.file,
-        hashes: hash ? { sha256: hash } : null
+        hashes: Object.keys(hashes).length ? hashes : null
       }));
       toast(`${t('addons.installedOne')}: ${res.filename}`, 'success');
       refreshAddons(id);
@@ -2311,12 +2319,22 @@ const actions = {
     renderWizard();
   },
   'wizard-next': async () => {
-    syncWizardFromDom();
-    const w = state.wizard;
-    if (w.step === 1) { await loadWizardVersions(); w.step = 2; }
-    else if (w.step === 2) { await loadWizardLoaders(); w.step = 3; }
-    else w.step += 1;
-    renderWizard();
+    // Steps 1 and 2 fetch from live APIs. Without this guard every extra click
+    // on Next while that request is in flight was handled as well — the button
+    // stayed enabled, the clicks queued up and the wizard landed on a step that
+    // no longer exists (step 5 of 4), rendering a blank modal.
+    if (busy('wizard-next')) return;
+    busy('wizard-next', true);
+    try {
+      syncWizardFromDom();
+      const w = state.wizard;
+      if (w.step === 1) { await loadWizardVersions(); w.step = 2; }
+      else if (w.step === 2) { await loadWizardLoaders(); w.step = 3; }
+      else w.step += 1;
+    } finally {
+      busy('wizard-next', false);
+      renderWizard();
+    }
   },
   'wizard-back': () => { syncWizardFromDom(); state.wizard.step -= 1; renderWizard(); },
   'wizard-create': () => wizardCreate()
@@ -2435,6 +2453,16 @@ document.addEventListener('change', async (ev) => {
   const ownAction = target.dataset ? target.dataset.action : null;
   if (ownAction && actions[ownAction]) {
     try { await actions[ownAction](target, ev); } catch (err) { notifyError(err); }
+    return;
+  }
+
+  // addon source picker (Modrinth / Hangar): remember the choice in the state,
+  // otherwise the next repaint re-selects the previous source and the dropdown
+  // silently flips back under the user
+  if (target.id === 'addon-source') {
+    const key = `addons:${state.activeId}`;
+    state.addons = state.addons || {};
+    state.addons[key] = { ...(state.addons[key] || {}), source: target.value };
     return;
   }
 

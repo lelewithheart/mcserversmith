@@ -43,19 +43,46 @@ function hangarPlatform(meta) {
   return map[meta.provider] || 'PAPER';
 }
 
+/**
+ * Modrinth facets: an array of groups, each group an array of strings.
+ * Values inside one group are OR-ed; groups are AND-ed.
+ *
+ * Every value must be its own string. Joining them ("categories:paper,bukkit")
+ * is rejected by the API with HTTP 400 — "failed to parse facets / invalid
+ * filter at byte 18: found ','" — which is what made every plugin search fail
+ * for any server whose loader list has more than one entry.
+ */
+function facetGroups({ projectType, loaders = [], gameVersion = null }) {
+  const groups = [[`project_type:${projectType}`]];
+  if (loaders.length) groups.push(loaders.map((l) => `categories:${l}`));
+  if (gameVersion) groups.push([`versions:${gameVersion}`]);
+  return groups;
+}
+
 // ---------------------------------------------------------------------------
 async function searchModrinth({ query, mcVersion, meta, limit = 20 }) {
   const loc = folderFor(meta);
   if (!loc) throw new Error('This server type does not support plugins or mods');
-  const facets = [
-    [`project_type:${loc.projectType}`],
-    [`categories:${modrinthLoaders(meta).join(',')}`]
-  ];
-  if (mcVersion) facets.push([`versions:${mcVersion}`]);
+  const facets = facetGroups({
+    projectType: loc.projectType,
+    loaders: modrinthLoaders(meta),
+    gameVersion: mcVersion || null
+  });
   const url = `${MODRINTH}/search?query=${encodeURIComponent(query || '')}`
     + `&limit=${limit}&index=relevance&facets=${encodeURIComponent(JSON.stringify(facets))}`;
   const data = await fetchJSON(url);
-  return (data.hits || []).map((h) => ({
+  let hits = data.hits || [];
+  if (!hits.length && mcVersion) {
+    // the game-version facet is an exact match, so a project that only lists
+    // patch releases (1.21.4) disappears when the server runs "1.21". Show the
+    // loader matches instead of an empty list — the version picker that follows
+    // is where the real compatibility check happens.
+    const loose = facetGroups({ projectType: loc.projectType, loaders: modrinthLoaders(meta) });
+    const retry = await fetchJSON(`${MODRINTH}/search?query=${encodeURIComponent(query || '')}`
+      + `&limit=${limit}&index=relevance&facets=${encodeURIComponent(JSON.stringify(loose))}`);
+    hits = retry.hits || [];
+  }
+  return hits.map((h) => ({
     source: 'modrinth',
     id: h.project_id,
     slug: h.slug,
@@ -101,9 +128,12 @@ async function versions({ source = 'modrinth', id, meta, mcVersion, limit = 20 }
     const [owner, slug] = String(id).includes('/') ? String(id).split('/') : [null, id];
     if (!owner) throw new Error('Hangar needs "owner/slug"');
     const platform = hangarPlatform(meta);
+    // The versions endpoint does not know `version` (that is a /projects filter);
+    // a Minecraft version filter is `platformVersion` and it requires `platform`.
+    // Sending `version` here answered HTTP 400 and broke the whole version list.
     const url = `${HANGAR}/projects/${owner}/${slug}/versions?limit=${limit}&offset=0`
-      + (platform ? `&platform=${platform}` : '')
-      + (mcVersion ? `&version=${encodeURIComponent(mcVersion)}` : '');
+      + `&platform=${platform}`
+      + (mcVersion ? `&platformVersion=${encodeURIComponent(mcVersion)}` : '');
     const data = await fetchJSON(url);
     return (data.result || []).map((v) => {
       const dl = v.downloads || {};
@@ -118,7 +148,7 @@ async function versions({ source = 'modrinth', id, meta, mcVersion, limit = 20 }
         filename: info.name || `${slug}-${v.name}.jar`,
         size: info.sizeBytes || null,
         hashes: { sha256: info.sha256Hash || null },
-        gameVersions: [],
+        gameVersions: (v.platformDependencies || {})[platform] || [],
         loaders: [platform],
         versionType: (v.channel && v.channel.name) || 'release',
         pageUrl: `https://hangar.papermc.io/${owner}/${slug}/versions/${v.name}`
@@ -204,6 +234,8 @@ function toggleAddon(id, filename) {
 
 module.exports = {
   folderFor,
+  modrinthLoaders,
+  facetGroups,
   search,
   versions,
   install,
