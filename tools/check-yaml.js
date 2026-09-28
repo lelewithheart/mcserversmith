@@ -7,6 +7,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 let yaml;
 try {
@@ -106,6 +107,25 @@ try {
   report('every npm dist script disables publishing once',
     distScripts.every((s) => disablesPublishing(publishPolicySource(s))),
     'exactly one --publish never per build command (in the script or the tools/ helper it calls), and no "-- --publish" appended on the command line');
+
+  // Release notes advertise download links. A row for a file the build no longer
+  // produces is a dead link on every future release page and nothing else notices —
+  // the combined Windows installer and the per-file checksums were both removed in
+  // 1.0.1 while these rows stayed behind.
+  let notes = '';
+  try {
+    notes = execFileSync(process.execPath, [path.join(root, 'tools', 'release-notes.js'), `v${pkgForWorkflow.version}`], { encoding: 'utf8' });
+  } catch (err) {
+    notes = '';
+  }
+  // only the download TABLE advertises files — the prose is allowed to name old ones
+  const tableRows = notes.split('\n').filter((l) => l.trim().startsWith('|')).join('\n');
+  report('the release notes can be generated', notes.length > 200 && tableRows.length > 0, 'tools/release-notes.js produced no output');
+  report('release notes advertise no removed artifact',
+    !/-win\.exe\b/.test(tableRows) && !/\.(exe|AppImage|deb)\.sha256/.test(tableRows) && /SHA256SUMS\.txt/.test(notes),
+    'a download row still names a file that is no longer built (or the checksum note is stale)');
+  report('release notes list the files that are built',
+    /-win-x64\.exe/.test(tableRows) && /-win-arm64\.exe/.test(tableRows) && /\.AppImage/.test(tableRows) && /\.deb/.test(tableRows));
 } catch (err) {
   failed += 1;
   console.log(`FAIL  workflow sanity checks: ${err.message.split('\n')[0]}`);

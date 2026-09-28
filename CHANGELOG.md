@@ -32,6 +32,10 @@ noise, and the one file the updater used was a 216 MB combined installer.
   checks are strict (asset count, no combined installer, arm64 feed present). The
   verify job deliberately only judges the feed it can see, which at tag time is still
   the previous release.
+- The release notes no longer advertise the removed combined installer or per-file
+  checksums — the download table still linked `MCServerSmith-<v>-win.exe`, a file that
+  no longer exists. `npm run check:yaml` now generates the notes and fails if a row
+  names something the build does not produce.
 
 ## [1.0.0] — 2026-09-28
 

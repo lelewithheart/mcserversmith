@@ -30,10 +30,12 @@ if (start !== -1) {
     'the release notes fall back to a placeholder. Add the entry and re-run.');
 }
 
+// One row per file the release job actually uploads. Keep this in sync with
+// electron-builder.yml + tools/build-win.js — a row for a file that is no longer
+// built is a dead download link on the release page, and nothing else would notice.
 const files = [
   ['Windows 64-bit', `MCServerSmith-${version}-win-x64.exe`],
   ['Windows ARM64', `MCServerSmith-${version}-win-arm64.exe`],
-  ['Windows (either)', `MCServerSmith-${version}-win.exe`],
   ['Linux x86_64 (portable)', `MCServerSmith-${version}-linux-x86_64.AppImage`],
   ['Linux ARM64 (portable)', `MCServerSmith-${version}-linux-arm64.AppImage`],
   ['Debian/Ubuntu', `MCServerSmith-${version}-linux-amd64.deb`]
@@ -53,10 +55,11 @@ out.push(
   '```',
   `chmod +x MCServerSmith-${version}-linux-x86_64.AppImage && ./MCServerSmith-${version}-linux-x86_64.AppImage`,
   `sudo apt install ./MCServerSmith-${version}-linux-amd64.deb`,
-  `sha256sum -c MCServerSmith-${version}-linux-x86_64.AppImage.sha256`,
+  'sha256sum -c SHA256SUMS.txt',
   '```',
   '',
-  'Every file has a `.sha256` next to it.',
+  '`SHA256SUMS.txt` covers every file in this release. The `latest*.yml` files next to',
+  'them are what the app\'s own updater reads — download them only if you mirror a build.',
   '',
   '## Notes',
   '- Windows installers are unsigned, so SmartScreen warns on first run ("More info" -> "Run anyway").',
