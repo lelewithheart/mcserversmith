@@ -56,6 +56,12 @@ const state = {
   instances: [],
   statuses: {},
   console: {},
+  props: {},
+  addons: {},
+  backups: {},
+  tunnelStatus: {},
+  java: [],
+  wizardTunnelDraft: false,
   providers: [],
   versions: {},
   loaders: {},
@@ -738,6 +744,31 @@ function tabNetwork(inst, st) {
   </div>`;
 }
 
+/**
+ * Minecraft's own defaults for the keys the tab renders.
+ *
+ * An instance that has not been started yet has no server.properties at all, and
+ * a generated one may be missing keys. Showing an empty field is not neutral:
+ * the Save button writes every field back, so a blank online-mode checkbox would
+ * have written online-mode=false and kicked every player out of a cracked-off
+ * server. Falling back to the value the server itself would use keeps the form
+ * showing — and saving — the truth.
+ */
+const PROP_DEFAULTS = {
+  motd: 'A Minecraft Server',
+  'server-port': '25565',
+  'max-players': '20',
+  difficulty: 'easy',
+  gamemode: 'survival',
+  'view-distance': '10',
+  'simulation-distance': '10',
+  'online-mode': 'true',
+  pvp: 'true',
+  'white-list': 'false',
+  'spawn-protection': '16',
+  'level-name': 'world'
+};
+
 function tabConfig(inst) {
   const c = (state.props && state.props[inst.id]) || { values: {} };
   const v = c.values || {};
@@ -748,12 +779,15 @@ function tabConfig(inst) {
     ['pvp', 'bool'], ['white-list', 'bool'], ['spawn-protection', 'number'],
     ['rcon.port', 'number'], ['rcon.password', 'text'], ['level-name', 'text']
   ];
+  const known = (c.entries ? c.entries.filter((e) => e.key).length : 0) || Object.keys(v).length;
   return `<div class="grid cols-2">
     <div class="card">
       <h3>${esc(t('config.title'))}</h3>
       <div class="muted small" style="margin-bottom:12px">${esc(t('config.hint'))}</div>
+      ${known === 0 ? `<div class="hint-box">${esc(t('config.notGenerated'))}</div>` : ''}
       ${fields.map(([key, type]) => {
-        const val = v[key] === undefined ? '' : v[key];
+        const raw = v[key] === undefined ? '' : String(v[key]);
+        const val = raw === '' && PROP_DEFAULTS[key] !== undefined ? PROP_DEFAULTS[key] : raw;
         if (type === 'bool') {
           return `<label class="check"><input type="checkbox" data-prop="${esc(key)}" ${val === 'true' ? 'checked' : ''} /><span class="mono">${esc(key)}</span></label>`;
         }
@@ -1918,7 +1952,10 @@ const actions = {
     if (state.tab === 'backups') refreshBackups();
     if (state.tab === 'addons') refreshAddons();
     if (state.tab === 'config') {
-      try { state.props[state.activeId] = await call(api.props.get(state.activeId)); } catch { /* ignore */ }
+      // a props failure used to be swallowed here: the tab then rendered blank
+      // fields and nobody could tell why
+      try { state.props[state.activeId] = await call(api.props.get(state.activeId)); }
+      catch (err) { notifyError(err); }
     }
     if (state.tab === 'network') refreshTunnel();
     if (state.tab === 'files') refreshFiles();
@@ -2447,7 +2484,8 @@ document.addEventListener('change', async (ev) => {
       patch[input.dataset.prop] = input.type === 'checkbox' ? String(input.checked) : input.value;
     }
     try {
-      state.props[inst.id] = await call(api.props.set(inst.id, patch));
+      await call(api.props.set(inst.id, patch));
+      state.props[inst.id] = await call(api.props.get(inst.id));
       toast(t('toast.saved'), 'success', 1400);
     } catch (err) { notifyError(err); }
     return;

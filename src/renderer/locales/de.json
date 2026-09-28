@@ -186,6 +186,7 @@
 
   "config.title": "server.properties",
   "config.hint": "Diese Werte gehen direkt in die server.properties. Für Änderungen den Server neu starten.",
+  "config.notGenerated": "Die server.properties gibt es noch nicht — angezeigt werden die Standardwerte von Minecraft. Sie werden beim ersten Speichern oder Serverstart geschrieben.",
   "config.launcher": "Launcher-Einstellungen",
   "config.memory": "Speicher (MB)",
   "config.maxPlayers": "Max. Spieler",

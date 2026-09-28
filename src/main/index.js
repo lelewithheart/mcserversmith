@@ -33,6 +33,14 @@ let quitting = false;
 // single instance
 // ---------------------------------------------------------------------------
 if (!app.requestSingleInstanceLock()) {
+  // A smoke run must never die silently: with the launched app open it used to
+  // quit with code 0 and no output at all, which looks exactly like "the UI test
+  // passed in 2 seconds". The harness gives the run its own --user-data-dir so
+  // the lock is free even while the real app is running.
+  if (isSmoke) {
+    log.error('another MCServerSmith instance holds the single-instance lock — start the smoke run with --user-data-dir=<dir>');
+    app.exit(3);
+  }
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -106,6 +114,10 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => { mainWindow = null; });
+  // TEMP DIAG
+  mainWindow.on('close', () => log.warn('DIAG window close'));
+  mainWindow.on('closed', () => log.warn('DIAG window closed'));
+  mainWindow.webContents.on('destroyed', () => log.warn('DIAG webContents destroyed'));
   return mainWindow;
 }
 
@@ -375,11 +387,17 @@ app.whenReady().then(async () => {
 
 // keep running in the tray when all windows are closed
 app.on('window-all-closed', () => {
+  log.warn('DIAG window-all-closed');
   if (!settings.get('closeToTray', true)) {
     quitting = true;
     app.quit();
   }
 });
+
+// TEMP DIAG
+app.on('before-quit', () => log.warn('DIAG before-quit'));
+app.on('will-quit', () => log.warn('DIAG will-quit'));
+app.on('quit', (_e, code) => log.warn(`DIAG quit code=${code}`));
 
 process.on('uncaughtException', (err) => {
   log.error(`uncaught: ${err.stack || err.message}`);

@@ -3,6 +3,56 @@
 All notable changes to MCServerSmith. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are semver.
 
+## [0.4.1] — 2026-09-28
+
+Two reported defects, both of them "the app tells you it worked while doing nothing".
+
+### Fixed
+- **Server → Configuration works again.** `state.props` — the cache of
+  `server.properties` — was read and written everywhere but never declared in the
+  renderer's state object, so every load went into `undefined` and threw
+  `Cannot set properties of undefined (setting '<server-id>')`. Each of those four
+  writes sat inside a `try { … } catch { /* ignore */ }`, so nothing surfaced: the
+  tab rendered blank fields, the Save button failed silently and the checkbox
+  quick-save never wrote. Declared the key (plus the other lazily-created caches:
+  `addons`, `backups`, `tunnelStatus`, `java`, `wizardTunnelDraft`), and the props
+  load now reports a real failure with a toast instead of swallowing it.
+- **The Configuration fields show the values the server actually uses.** A fresh
+  instance has no `server.properties` yet, and every field is written back on save
+  — so a blank `online-mode` checkbox meant "off", and saving would have kicked
+  every player. Missing keys now fall back to Minecraft's own defaults, and a hint
+  says the file has not been generated yet.
+
+### Changed
+- **Server flavour cards are readable.** `.type-card` is a `<button>` and never set
+  a colour, so the UA stylesheet won: the flavour names (*Vanilla, Paper, Purpur,
+  Fabric, …*) rendered pure black on the dark card — a measured contrast of
+  **1.32:1**. The cards now carry the theme text colour, the descriptions use a
+  brighter secondary tone (`--text-2`, 9.77:1), hover is visible on the whole card
+  and `--muted` is nudged up globally for secondary text. `color-scheme: dark` also
+  keeps native widgets (select popups, checkboxes, scrollbars) dark.
+
+### Added
+- `npm run check:state` (`tools/check-state.js`, also in CI): every `state.<key>`
+  the renderer touches must exist in the state literal — the exact bug above, with
+  write-into-undefined reported separately from a plain read.
+- `MCSERVERSMITH_SMOKE_VIEW=<name>` leaves a view on screen for the smoke
+  screenshot (`ui-<name>.png`), so the wizard's step 1 can be reviewed by eye.
+
+### Verified
+- `npm run test:ui` — **123/123** (was 113). New coverage: the settings tab button
+  really switches the view, `server.properties` reaches the state cache, the motd
+  field is filled in, `online-mode` shows the effective (checked) value, ticking a
+  checkbox writes the file and raises no error toast — plus computed WCAG contrast
+  checks for the flavour cards (13.09:1 and 9.77:1, and 1.32:1 when the fix is
+  reverted). Screenshot of the wizard checked by eye.
+- `npm run check:state` fails with the four write sites when `props` is removed
+  again — verified against a mutated copy of the renderer.
+- The smoke harness now runs with its own `--user-data-dir`: with the installed app
+  open, the old harness lost the single-instance lock and quit with **code 0 in two
+  seconds, printing nothing**, which reads exactly like a pass. A smoke run that
+  cannot take the lock now exits 3 with an explanation.
+
 ## [0.4.0] — 2026-09-25
 
 The Files tab, rebuilt as an actual file browser.

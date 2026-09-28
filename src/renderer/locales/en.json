@@ -186,6 +186,7 @@
 
   "config.title": "server.properties",
   "config.hint": "These values go straight into server.properties. Restart the server for changes to take effect.",
+  "config.notGenerated": "server.properties does not exist yet — the values shown are Minecraft's defaults and are written the first time you save or start the server.",
   "config.launcher": "Launcher settings",
   "config.memory": "Memory (MB)",
   "config.maxPlayers": "Max players",

@@ -41,7 +41,7 @@ const env = {
 console.log(`running UI smoke test with ${electronPath}`);
 console.log(`data dir: ${dataDir}\n`);
 
-const child = spawn(electronPath, ['.'], { cwd: root, env, stdio: 'inherit' });
+const child = spawn(electronPath, ['.', `--user-data-dir=${path.join(dataDir, 'userdata')}`], { cwd: root, env, stdio: 'inherit' });
 
 // A hung renderer would otherwise leave orphaned electron processes behind (the
 // npm parent can be killed while the child keeps running), so stop it hard.

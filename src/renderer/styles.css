@@ -6,7 +6,8 @@
   --bg-4: #262b37;
   --line: #2c313d;
   --text: #e6e9f0;
-  --muted: #8b93a7;
+  --muted: #98a2b8;
+  --text-2: #c3cbdc;
   --accent: #5b8cff;
   --accent-2: #3f6fe0;
   --green: #3ecf8e;
@@ -16,6 +17,9 @@
   --radius: 10px;
   --shadow: 0 8px 30px rgba(0, 0, 0, .35);
   --mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  /* native widgets (select popups, checkboxes, scrollbars) stay dark — without
+     this Chromium paints them with the light system palette */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -189,15 +193,19 @@ td.actions { text-align: right; white-space: nowrap; }
 .hint-box.gold { border-color: var(--purple); background: rgba(160, 107, 255, .1); }
 
 .type-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+/* .type-card is a <button>: without an explicit colour the UA stylesheet wins and
+   the flavour names render near-black on the dark card — unreadable. */
 .type-card {
   border: 1px solid var(--line); background: var(--bg-3); border-radius: 10px;
   padding: 12px; cursor: pointer; text-align: left;
+  color: var(--text); font: inherit; line-height: 1.45;
 }
-.type-card:hover { border-color: var(--accent); }
-.type-card.selected { border-color: var(--accent); background: rgba(91, 140, 255, .12); }
-.type-card .t-name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.type-card .t-desc { font-size: 12px; color: var(--muted); margin-top: 5px; }
-.type-card .t-tag { font-size: 10px; text-transform: uppercase; color: var(--purple); }
+.type-card:hover { border-color: var(--accent); background: var(--bg-4); }
+.type-card.selected { border-color: var(--accent); background: rgba(91, 140, 255, .16); }
+.type-card.selected .t-name { color: #fff; }
+.type-card .t-name { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.type-card .t-desc { font-size: 12px; color: var(--text-2); margin-top: 5px; }
+.type-card .t-tag { font-size: 10px; text-transform: uppercase; color: #c8aaff; }
 
 /* ---------------------------------------------------------------- modal */
 .modal-backdrop {

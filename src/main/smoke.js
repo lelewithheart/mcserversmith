@@ -23,11 +23,28 @@ function logsDir() {
 const READY_DELAY_MS = Number(process.env.MCSERVERSMITH_SMOKE_DELAY || 5000);
 
 function script() {
+  // MCSERVERSMITH_SMOKE_VIEW=wizard leaves the new-server wizard on screen so the
+  // screenshot shows the flavour cards (that is how the readability fix gets
+  // reviewed without a second pair of eyes)
+  const leaveOn = process.env.MCSERVERSMITH_SMOKE_VIEW || '';
   return `(async () => {
+    const LEAVE_ON = ${JSON.stringify(leaveOn)};
     const out = { checks: [], consoleErrors: [] };
     const ok = (name, cond, detail) => out.checks.push({ name, ok: !!cond, detail: detail === undefined ? '' : String(detail) });
     const $ = (s) => document.querySelector(s);
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // WCAG contrast of a rendered colour pair — used to prove text on the dark
+    // cards is actually legible instead of trusting a hex value by eye
+    const rgb = (s) => (String(s).match(/\\d+(\\.\\d+)?/g) || [0, 0, 0]).slice(0, 3).map(Number);
+    const lum = (c) => {
+      const f = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+      return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+    };
+    const contrast = (fg, bg) => {
+      const a = lum(rgb(fg)); const b = lum(rgb(bg));
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
 
     // capture anything the renderer throws from here on
     window.onerror = (msg) => out.consoleErrors.push(String(msg));
@@ -70,6 +87,22 @@ function script() {
     ok('server types listed in wizard', typeCards.length >= 7, typeCards.length + ' types');
     const typeNames = [...typeCards].map((c) => (c.querySelector('.t-name') || {}).textContent || '').join(',').trim();
     ok('type labels are translated', typeNames.length > 20 && !typeNames.includes('.desc'), typeNames.slice(0, 90));
+
+    // .type-card is a <button>: with no explicit colour the UA stylesheet wins
+    // and the flavour names paint near-black on the dark card. Assert real
+    // contrast instead of eyeballing a hex value.
+    if (typeCards.length) {
+      const cardBg = getComputedStyle(typeCards[0]).backgroundColor;
+      const nameEl = typeCards[0].querySelector('.t-name');
+      const descEl = typeCards[0].querySelector('.t-desc');
+      const nameC = nameEl ? contrast(getComputedStyle(nameEl).color, cardBg) : 0;
+      const descC = descEl ? contrast(getComputedStyle(descEl).color, cardBg) : 0;
+      const fmt = (r) => r.toFixed(2) + ':1';
+      ok('wizard: flavour names are legible on the card (>=4.5:1)', nameC >= 4.5,
+        (nameEl ? getComputedStyle(nameEl).color : '?') + ' on ' + cardBg + ' = ' + fmt(nameC));
+      ok('wizard: flavour descriptions are legible on the card (>=4.5:1)', descC >= 4.5,
+        (descEl ? getComputedStyle(descEl).color : '?') + ' on ' + cardBg + ' = ' + fmt(descC));
+    }
 
     // type the name first (before touching a type card) — the Next button must
     // enable itself live, otherwise step 1 is a dead end
@@ -566,6 +599,41 @@ function script() {
           'activeElement: ' + (document.activeElement ? (document.activeElement.dataset.prop || document.activeElement.tagName) : 'none'));
       }
 
+      // ---- settings (server.properties) tab -------------------------------
+      // state.props was never declared in the state literal, so every read and
+      // every write went into undefined: the tab rendered blank fields, the Save
+      // button threw "Cannot set properties of undefined" and the checkbox
+      // quick-save silently failed. The readers were all "state.props && ..."
+      // guarded, which is why it looked like "the tab just doesn't work".
+      const tabBtn = document.querySelector('[data-action="tab"][data-tab="config"]');
+      ok('config: the settings tab button exists', !!tabBtn);
+      if (tabBtn) { tabBtn.click(); await sleep(1400); }
+      ok('config: clicking the tab switches the view', state.tab === 'config', String(state.tab));
+      const cache = state.props && state.props[instId];
+      ok('config: server.properties is loaded into the state cache',
+        !!cache && Array.isArray(cache.entries) && typeof cache.values === 'object',
+        cache ? cache.entries.length + ' lines, keys: ' + Object.keys(cache.values || {}).length : 'state.props[' + instId + '] is undefined');
+      const motdEl = document.querySelector('#content input[data-prop="motd"]');
+      ok('config: the motd field is filled in', !!motdEl && motdEl.value.length > 0, motdEl ? motdEl.value : 'no field');
+      const onlineEl = document.querySelector('#content input[data-prop="online-mode"]');
+      ok('config: online-mode shows the effective value (checked) instead of a blank field',
+        !!onlineEl && onlineEl.checked === true, onlineEl ? String(onlineEl.checked) : 'no field');
+
+      // a real round trip: tick a box, the file on disk must follow, with no error toast
+      const errsBefore = document.querySelectorAll('.toast.error').length;
+      const wlEl = document.querySelector('#content input[data-prop="white-list"]');
+      if (wlEl) { wlEl.checked = true; wlEl.dispatchEvent(new Event('change', { bubbles: true })); await sleep(1600); }
+      const after = await window.mcss.props.get(instId);
+      ok('config: ticking a checkbox writes server.properties',
+        !!(after && after.ok && after.data.values['white-list'] === 'true'),
+        after && after.data ? JSON.stringify(after.data.values).slice(0, 90) : ('error: ' + (after && after.error)));
+      ok('config: saving shows no error toast',
+        document.querySelectorAll('.toast.error').length === errsBefore,
+        [...document.querySelectorAll('.toast.error')].map((t2) => t2.textContent).join(' | '));
+      ok('config: the written defaults match Minecraft (online-mode stays true)',
+        !!(after && after.ok && after.data.values['online-mode'] === 'true'),
+        after && after.data ? String(after.data.values['online-mode']) : 'n/a');
+
       // console: the command box used to grab the focus from the filter box on
       // every re-mount, and the log jumped back to the bottom
       // the console filter keeps focus and text across a poll
@@ -591,6 +659,16 @@ function script() {
       state.filesSel = null;
       await refreshFiles('');
       await sleep(900);
+
+      if (LEAVE_ON === 'wizard') {
+        // reopen the new-server wizard so the screenshot shows the flavour cards
+        closeModal();
+        state.view = 'welcome';
+        rerender();
+        await sleep(400);
+        openWizard();
+        await sleep(900);
+      }
     }
 
     ok('no uncaught renderer errors', out.consoleErrors.length === 0, out.consoleErrors.join(' | '));
@@ -640,7 +718,9 @@ async function run({ window, probe }) {
       window.showInactive();
       await new Promise((r) => setTimeout(r, 1200));
       const img = await window.webContents.capturePage();
-      const shot = path.join(logsDir(), 'ui-files.png');
+      const shot = path.join(logsDir(), process.env.MCSERVERSMITH_SMOKE_VIEW
+        ? `ui-${process.env.MCSERVERSMITH_SMOKE_VIEW}.png`
+        : 'ui-files.png');
       fs.writeFileSync(shot, img.toPNG());
       console.log(`screenshot: ${shot}`);
       window.hide();

@@ -49,6 +49,8 @@ jobs:
         run: node tools/check-i18n.js
       - name: Config sanity
         run: node tools/check-yaml.js
+      - name: Renderer state cache
+        run: node tools/check-state.js
       - name: Provider APIs (live)
         run: node tools/test-providers.js
 
