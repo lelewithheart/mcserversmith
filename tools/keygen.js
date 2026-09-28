@@ -13,14 +13,22 @@
  *       node tools/keygen.js --mint --tier supporter --name "Max M." --email max@example.com
  *       node tools/keygen.js --mint --tier cloud --days 365 --name "Community X"
  *
- *  3) Verify a key someone sent you:
+ *  3) Mint a whole batch into a file (giveaway, supporter wall, Patreon drop):
+ *       node tools/keygen.js --batch 100 --tier supporter
+ *       node tools/keygen.js --batch 100 --tier cloud --days 365 --out private/x.csv
+ *     The file goes to private/ by default, every key in it is verified against the
+ *     public key before anything is written, and writing into the tracked part of the
+ *     repository is refused (licence keys are money — they never belong in git).
+ *
+ *  4) Verify a key someone sent you:
  *       node tools/keygen.js --verify MCSS1-xxxx.yyyy
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const KEYS_DIR = path.resolve(__dirname, '..', 'keys');
+const ROOT = path.resolve(__dirname, '..');
+const KEYS_DIR = path.join(ROOT, 'keys');
 const PRIVATE_KEY_FILE = path.join(KEYS_DIR, 'mcss-private.pem');
 const PUBLIC_KEY_FILE = path.join(KEYS_DIR, 'mcss-public.txt');
 
@@ -72,7 +80,8 @@ function loadPrivate() {
   return crypto.createPrivateKey(fs.readFileSync(PRIVATE_KEY_FILE, 'utf8'));
 }
 
-function mint(opts) {
+/** Build one signed key. Used by both --mint and --batch. */
+function mintKey(opts, extra = {}) {
   const tier = opts.tier || 'supporter';
   const days = opts.days ? Number(opts.days) : null;
   const payload = {
@@ -82,18 +91,94 @@ function mint(opts) {
     e: opts.email || null,
     i: new Date().toISOString(),
     x: days ? new Date(Date.now() + days * 86400000).toISOString() : (opts.expires || null),
-    k: opts.kid || 'default'
+    k: opts.kid || 'default',
+    ...extra
   };
-  const payloadBuf = Buffer.from(b64u(Buffer.from(JSON.stringify(payload))));
+  const json = JSON.stringify(payload);
+  const payloadBuf = Buffer.from(b64u(Buffer.from(json)));
   const signature = crypto.sign(null, payloadBuf, loadPrivate());
-  const key = `MCSS1-${b64u(Buffer.from(JSON.stringify(payload)))}.${b64u(signature)}`;
-  console.log(`\nTier      : ${tier}`);
+  return { key: `MCSS1-${b64u(Buffer.from(json))}.${b64u(signature)}`, payload };
+}
+
+function mint(opts) {
+  const { key, payload } = mintKey(opts);
+  console.log(`\nTier      : ${payload.t}`);
   console.log(`Name      : ${payload.n || '-'}`);
   console.log(`Email     : ${payload.e || '-'}`);
   console.log(`Expires   : ${payload.x || 'never'}`);
   console.log('\nLICENCE KEY (send this to the customer):\n');
   console.log(key);
   console.log('');
+}
+
+/** Check a key with the public key file — no app needed. */
+function verifyWithPublicKey(key) {
+  const body = key.replace(/^MCSS1-/, '');
+  const [p, s] = body.split('.');
+  const payload = JSON.parse(fromB64u(p).toString('utf8'));
+  const pubB64 = fs.existsSync(PUBLIC_KEY_FILE) ? fs.readFileSync(PUBLIC_KEY_FILE, 'utf8').trim() : null;
+  if (!pubB64) throw new Error('no public key file found');
+  const pub = crypto.createPublicKey({ key: Buffer.from(pubB64, 'base64'), format: 'der', type: 'spki' });
+  return crypto.verify(null, Buffer.from(p), pub, fromB64u(s));
+}
+
+/**
+ * Mint a batch into a file.
+ *
+ * Keys are money: the default target is private/ (git-ignored), and a path inside
+ * the tracked repository is refused unless --force says otherwise. Every key is
+ * verified before the file is written, so a batch that cannot be redeemed never
+ * leaves the machine.
+ */
+function batch(opts) {
+  const count = Number(opts.batch);
+  if (!Number.isFinite(count) || count < 1 || count > 10000) {
+    console.error('--batch needs a number between 1 and 10000');
+    process.exit(2);
+  }
+  const tier = opts.tier || 'supporter';
+  const start = Number(opts.start || 1);
+  const date = new Date().toISOString().slice(0, 10);
+  const outPath = opts.out
+    ? path.resolve(ROOT, String(opts.out))
+    : path.join(ROOT, 'private', `${tier}-keys-${count}-${date}.csv`);
+
+  const rel = path.relative(ROOT, outPath);
+  const insideRepo = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  const safePlace = rel.startsWith(`private${path.sep}`) || rel.startsWith(`keys${path.sep}`);
+  if (insideRepo && !safePlace && !opts.force) {
+    console.error(`refusing to write licence keys into the repository: ${rel}`);
+    console.error('licence keys are money — put them in private/ (git-ignored) or pass --force deliberately');
+    process.exit(2);
+  }
+
+  const rows = [['serial', 'key', 'tier', 'minted', 'expires'].join(',')];
+  const keys = [];
+  for (let i = 0; i < count; i += 1) {
+    const serial = start + i;
+    const { key, payload } = mintKey(opts, { s: serial });
+    if (!verifyWithPublicKey(key)) {
+      console.error(`key ${serial} does not verify against ${PUBLIC_KEY_FILE} — nothing was written`);
+      process.exit(1);
+    }
+    keys.push(key);
+    rows.push([serial, key, payload.t, payload.i, payload.x || 'never'].join(','));
+  }
+
+  fs.mkdirSync(path.dirname(outPath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(outPath, `${rows.join('\n')}\n`, { mode: 0o600 });
+
+  // prove the file is readable as a batch, not just that the keys were made
+  const written = fs.readFileSync(outPath, 'utf8').trim().split('\n').slice(1);
+  const allValid = written.every((line) => verifyWithPublicKey(line.split(',')[1]));
+
+  console.log(`\n${count} ${tier} keys -> ${outPath}`);
+  console.log(`  serials  : ${start}–${start + count - 1}`);
+  console.log(`  expires  : ${keys.length ? JSON.parse(fromB64u(keys[0].replace(/^MCSS1-/, '').split('.')[0]).toString('utf8')).x || 'never' : '-'}`);
+  console.log(`  verified : ${allValid ? `all ${written.length} keys in the file` : 'FAILED'}`);
+  console.log(`  git      : ${safePlace || !insideRepo ? 'ignored / outside the repo' : 'INSIDE THE REPO'}`);
+  console.log(`\nfirst key:\n${keys[0]}\n`);
+  if (!allValid) process.exit(1);
 }
 
 function verify(key) {
@@ -110,6 +195,7 @@ function verify(key) {
 
 const a = args();
 if (a.keygen) keygen();
+else if (a.batch) batch(a);
 else if (a.mint) mint(a);
 else if (a.verify) verify(a._[0] || a.verify);
 else {

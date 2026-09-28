@@ -182,6 +182,7 @@ node tools/keygen.js --keygen                       # once: creates keys/mcss-pr
 
 node tools/keygen.js --mint --tier supporter --name "Max M." --email max@example.com
 node tools/keygen.js --mint --tier cloud --days 365 --name "Community X"
+node tools/keygen.js --batch 100 --tier supporter                # 100 keys -> private/supporter-keys-100-<date>.csv
 node tools/keygen.js --verify MCSS1-....
 ```
 
